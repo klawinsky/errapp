@@ -1,95 +1,48 @@
-/* eRegioJet demo - wszystkie zakładki na jednej stronie
-   Dane przechowywane w localStorage (STORAGE_KEY).
-   Plik gotowy do wgrania na GitHub Pages.
+/* eRegioJet — poprawiona wersja
+   - nowoczesny wygląd
+   - zakładki otwierane z menu (jedna aktywna)
+   - wszystkie dane przez modale (dodaj/edytuj)
+   - localStorage jako demo "baza danych"
 */
 
-const STORAGE_KEY = "eRegioJet_demo_reports_v2";
-
+const STORAGE_KEY = "eRegioJet_demo_v3";
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* -------------------------
-   Proste UI helpers
-   ------------------------- */
-function qs(sel, root = document) { return root.querySelector(sel); }
-function qsa(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
+/* ---------- pomocnicze selektory ---------- */
+const qs = (s, r = document) => r.querySelector(s);
+const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 
-function showLoggedIn(email) {
-  qs("#login-area").classList.add("hidden");
-  const ua = qs("#user-area");
-  ua.classList.remove("hidden");
-  qs("#user-email-display").textContent = email || "Użytkownik (DEMO)";
-  // enable sidebar
-  qsa(".nav-link").forEach(n => n.classList.remove("disabled"));
-}
-
-function showLoggedOut() {
-  qs("#login-area").classList.remove("hidden");
-  qs("#user-area").classList.add("hidden");
-}
-
-/* Smooth scroll from sidebar buttons */
-qsa("[data-scroll]").forEach(btn => {
+/* ---------- NAV / PANELS ---------- */
+qsa(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    const target = document.querySelector(btn.getAttribute("data-scroll"));
-    if (target) target.scrollIntoView({behavior:"smooth", block:"start"});
+    qsa(".nav-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const panel = btn.getAttribute("data-panel");
+    showPanel(panel);
   });
 });
 
-/* Highlight active nav link on scroll */
-const navLinks = qsa(".nav-link");
-const panels = navLinks.map(a => document.querySelector(a.getAttribute("href")));
-function onScrollHighlight() {
-  const top = window.scrollY + 120;
-  let activeIndex = 0;
-  panels.forEach((p, i) => {
-    if (p && p.offsetTop <= top) activeIndex = i;
-  });
-  navLinks.forEach((a,i) => a.classList.toggle("active", i === activeIndex));
-}
-window.addEventListener("scroll", onScrollHighlight);
-onScrollHighlight();
+qsa("[data-open]").forEach(b => b.addEventListener("click", () => {
+  const panel = b.getAttribute("data-open");
+  // activate corresponding nav button
+  const nav = qsa(`.nav-btn[data-panel="${panel}"]`)[0];
+  if (nav) { nav.click(); } else { showPanel(panel); }
+}));
 
-/* -------------------------
-   Storage: load / save
-   ------------------------- */
-function loadReports() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try { return JSON.parse(raw); } catch(e) { console.error(e); return []; }
-}
-function saveReports(reports) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-}
-function createEmptyReport() {
-  return {
-    id: Date.now().toString(),
-    status: "in_progress",
-    general: { trainNumber:"", date:"", from:"", to:"" },
-    consist: { locos:[], wagons:[] },
-    crew: [],
-    runs: [],
-    dispos: [],
-    remarks: []
-  };
-}
-function getReportById(id) {
-  return loadReports().find(r => r.id === id) || null;
-}
-function upsertReport(report) {
-  const reports = loadReports();
-  const idx = reports.findIndex(r => r.id === report.id);
-  if (idx === -1) reports.push(report); else reports[idx] = report;
-  saveReports(reports);
+function showPanel(name) {
+  qsa(".panel").forEach(p => p.classList.remove("active"));
+  const el = qs(`#panel-${name}`);
+  if (el) el.classList.add("active");
 }
 
-/* -------------------------
-   Init: demo login and initial report
-   ------------------------- */
+/* ---------- AUTH (demo) ---------- */
 qs("#login-demo-btn").addEventListener("click", () => {
   const email = qs("#login-email").value.trim() || "demo@eregiojet.local";
-  showLoggedIn(email);
-  // create initial report if none
+  qs("#login-form").classList.add("hidden");
+  qs("#user-panel").classList.remove("hidden");
+  qs("#user-email-display").textContent = email;
+  // ensure at least one report exists
   if (!loadReports().length) {
     const r = createEmptyReport();
     upsertReport(r);
@@ -98,27 +51,53 @@ qs("#login-demo-btn").addEventListener("click", () => {
     // load last in_progress or newest
     const reports = loadReports();
     const inProg = reports.find(r => r.status === "in_progress");
-    const toLoad = inProg || reports[reports.length-1];
+    const toLoad = inProg || reports[reports.length - 1];
     if (toLoad) loadReportIntoForm(toLoad, false);
   }
-  // scroll to menu
-  document.querySelector("#menu").scrollIntoView({behavior:"smooth"});
+  // show menu
+  qsa(".nav-btn").forEach(b => b.classList.remove("active"));
+  const menuBtn = qsa('.nav-btn[data-panel="menu"]')[0];
+  if (menuBtn) menuBtn.classList.add("active");
+  showPanel("menu");
 });
 
 qs("#logout-btn").addEventListener("click", () => {
-  showLoggedOut();
+  qs("#user-panel").classList.add("hidden");
+  qs("#login-form").classList.remove("hidden");
 });
 
-/* -------------------------
-   Read / write form
-   ------------------------- */
+/* ---------- STORAGE ---------- */
+function loadReports() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch (e) { console.error(e); return []; }
+}
+function saveReports(reports) { localStorage.setItem(STORAGE_KEY, JSON.stringify(reports)); }
+function createEmptyReport() {
+  return {
+    id: Date.now().toString(),
+    status: "in_progress",
+    general: { trainNumber: "", date: "", from: "", to: "" },
+    consist: { locos: [], wagons: [] },
+    crew: [],
+    runs: [],
+    dispos: [],
+    remarks: []
+  };
+}
+function getReportById(id) { return loadReports().find(r => r.id === id) || null; }
+function upsertReport(report) {
+  const reports = loadReports();
+  const idx = reports.findIndex(r => r.id === report.id);
+  if (idx === -1) reports.push(report); else reports[idx] = report;
+  saveReports(reports);
+}
+
+/* ---------- FORM READ/WRITE ---------- */
 function readReportFromForm() {
   if (!currentReportId) currentReportId = Date.now().toString();
   let report = getReportById(currentReportId);
-  if (!report) {
-    report = createEmptyReport();
-    report.id = currentReportId;
-  }
+  if (!report) { report = createEmptyReport(); report.id = currentReportId; }
   report.general.trainNumber = qs("#general-train-number").value.trim();
   report.general.date = qs("#general-date").value;
   report.general.from = qs("#general-from").value.trim();
@@ -143,7 +122,6 @@ function loadReportIntoForm(report, isReadOnly) {
   renderRemarks(report);
   updateStatusLabel(report);
 
-  // disable controls if readOnly or finished
   const disabled = readOnlyMode || report.status === "finished";
   ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => {
     const el = qs(id); if (el) el.disabled = disabled;
@@ -161,10 +139,9 @@ function updateStatusLabel(report) {
   else label.textContent = "Status: W trakcie prowadzenia";
 }
 
-/* Auto-save on general fields change */
+/* auto-save general fields */
 ["#general-train-number","#general-date","#general-from","#general-to"].forEach(sel => {
-  const el = qs(sel);
-  if (!el) return;
+  const el = qs(sel); if (!el) return;
   el.addEventListener("change", () => {
     if (readOnlyMode) return;
     const r = readReportFromForm();
@@ -173,9 +150,7 @@ function updateStatusLabel(report) {
   });
 });
 
-/* -------------------------
-   Render helpers
-   ------------------------- */
+/* ---------- RENDER ---------- */
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
   locoTbody.innerHTML = ""; wagonTbody.innerHTML = "";
@@ -256,14 +231,13 @@ function renderRemarks(report) {
   });
 }
 
-/* -------------------------
-   Modal system
-   ------------------------- */
+/* ---------- MODAL SYSTEM ---------- */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
 const modalSaveBtn = qs("#modal-save-btn");
 const modalCancelBtn = qs("#modal-cancel-btn");
+const modalCloseBtn = qs("#modal-close");
 let modalSaveHandler = null;
 
 function openModal(title, bodyHtml, onSave) {
@@ -272,6 +246,11 @@ function openModal(title, bodyHtml, onSave) {
   modalSaveHandler = onSave;
   modalBackdrop.classList.remove("hidden");
   modalBackdrop.setAttribute("aria-hidden","false");
+  // focus first input
+  setTimeout(() => {
+    const first = modalBody.querySelector("input,select,textarea,button");
+    if (first) first.focus();
+  }, 50);
 }
 function closeModal() {
   modalBackdrop.classList.add("hidden");
@@ -279,6 +258,7 @@ function closeModal() {
   modalSaveHandler = null;
 }
 modalCancelBtn.addEventListener("click", closeModal);
+modalCloseBtn.addEventListener("click", closeModal);
 modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
 
 /* Confirm */
@@ -301,9 +281,7 @@ function closeConfirm() {
 confirmCancelBtn.addEventListener("click", closeConfirm);
 confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
-/* -------------------------
-   Add / Edit actions
-   ------------------------- */
+/* ---------- ADD / EDIT ACTIONS (modale) ---------- */
 qs("#add-loco-btn").addEventListener("click", () => {
   const report = readReportFromForm();
   openModal("Dodaj lokomotywę", `
@@ -407,7 +385,7 @@ qs("#add-remark-btn").addEventListener("click", () => {
   });
 });
 
-/* Delegacja edycji / usuwania */
+/* Delegacja edycji/usuwania */
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -533,9 +511,7 @@ document.addEventListener("click", (e) => {
   }
 });
 
-/* -------------------------
-   Finish / Handover / Save / PDF
-   ------------------------- */
+/* ---------- SAVE / PDF / FINISH / HANDOVER ---------- */
 qs("#save-report-btn").addEventListener("click", () => {
   const r = readReportFromForm();
   upsertReport(r);
@@ -570,9 +546,7 @@ qs("#handover-btn").addEventListener("click", () => {
   alert("Pociąg przekazany do przejęcia.");
 });
 
-/* -------------------------
-   Lists: takeover, check, dyspo
-   ------------------------- */
+/* ---------- LISTS: takeover / check / dyspo ---------- */
 function refreshLists() {
   const reports = loadReports();
 
@@ -618,7 +592,7 @@ function refreshLists() {
   });
 }
 
-/* Click handlers for takeover / preview */
+/* takeover / preview actions */
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -631,35 +605,42 @@ document.addEventListener("click", (e) => {
     report.status = "in_progress";
     upsertReport(report);
     loadReportIntoForm(report, false);
-    document.querySelector("#handle-train").scrollIntoView({behavior:"smooth"});
+    // switch to handle-train panel
+    qsa(".nav-btn").forEach(b => b.classList.remove("active"));
+    const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
+    if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
     refreshLists();
   } else if (action === "preview") {
     loadReportIntoForm(report, true);
-    document.querySelector("#handle-train").scrollIntoView({behavior:"smooth"});
+    qsa(".nav-btn").forEach(b => b.classList.remove("active"));
+    const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
+    if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
   }
 });
 
-/* Manual refresh buttons */
+/* manual refresh buttons */
 qs("#refresh-takeover").addEventListener("click", refreshLists);
 qs("#refresh-check").addEventListener("click", refreshLists);
 qs("#refresh-dyspo").addEventListener("click", refreshLists);
 
-/* Auto-refresh dyspo every 3 minutes when visible */
+/* auto-refresh dyspo when visible every 3 minutes */
 setInterval(() => {
-  const rect = qs("#dyspo").getBoundingClientRect();
-  if (rect.top >= 0 && rect.top < window.innerHeight) refreshLists();
+  const el = qs("#panel-dyspo");
+  if (el && el.classList.contains("active")) refreshLists();
 }, 3 * 60 * 1000);
 
-/* New report button */
+/* new report */
 qs("#new-report-btn").addEventListener("click", () => {
   const r = createEmptyReport();
   upsertReport(r);
   loadReportIntoForm(r, false);
-  document.querySelector("#handle-train").scrollIntoView({behavior:"smooth"});
+  qsa(".nav-btn").forEach(b => b.classList.remove("active"));
+  const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
+  if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
   refreshLists();
 });
 
-/* On load: create one empty report if none */
+/* initial load */
 window.addEventListener("load", () => {
   if (!loadReports().length) {
     const r = createEmptyReport();
@@ -668,8 +649,6 @@ window.addEventListener("load", () => {
   refreshLists();
 });
 
-/* -------------------------
-   Small utilities
-   ------------------------- */
+/* ---------- utilities ---------- */
 function escapeHtml(s){ if (!s && s!==0) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
