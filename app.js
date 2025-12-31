@@ -1,11 +1,13 @@
-/* eRegioJet — nowoczesne demo
-   - zakładki otwierane z menu (jedna aktywna)
-   - dane przez modale (dodaj/edytuj)
-   - focus trap i Esc zamyka modal
-   - localStorage jako demo baza
+/* app.js
+   eRegioJet demo — logika aplikacji
+   - wymaga zalogowania (sprawdzane przez sessionStorage)
+   - nav działa (otwieranie zakładek)
+   - hamburger działa
+   - modale działają z focus trap i Esc
+   - dane w localStorage (STORAGE_KEY)
 */
 
-const STORAGE_KEY = "eRegioJet_demo_modern_v1";
+const STORAGE_KEY = "eRegioJet_demo_modern_v2";
 
 let currentReportId = null;
 let readOnlyMode = false;
@@ -14,6 +16,17 @@ let readOnlyMode = false;
 const qs = (s, r = document) => (r || document).querySelector(s);
 const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 
+/* ---------- auth check ---------- */
+(function ensureLoggedIn() {
+  const user = sessionStorage.getItem('eRJ_user');
+  if (!user) {
+    // jeśli brak logowania, wróć do strony logowania
+    window.location.href = 'index.html';
+    return;
+  }
+  qs('#user-email-display').textContent = user;
+})();
+
 /* ---------- sidebar toggle (mobile) ---------- */
 const sidebar = qs("#sidebar");
 const sidebarToggle = qs("#sidebar-toggle");
@@ -21,12 +34,16 @@ sidebarToggle.addEventListener("click", () => {
   sidebar.classList.toggle("open");
   sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
 });
-
-/* Close sidebar when clicking outside on small screens */
 document.addEventListener("click", (e) => {
   if (!sidebar.classList.contains("open")) return;
   if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
   sidebar.classList.remove("open");
+});
+
+/* ---------- logout ---------- */
+qs("#logout-btn").addEventListener("click", () => {
+  sessionStorage.removeItem('eRJ_user');
+  window.location.href = 'index.html';
 });
 
 /* ---------- panel navigation ---------- */
@@ -51,36 +68,8 @@ function showPanel(name) {
   qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
   if (el) el.hidden = false;
-  // ensure lists refreshed when opening certain panels
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
-
-/* ---------- auth demo ---------- */
-qs("#login-demo-btn").addEventListener("click", () => {
-  const email = qs("#login-email").value.trim() || "demo@eregiojet.local";
-  qs("#login-inline").classList.add("hidden");
-  qs("#user-inline").classList.remove("hidden");
-  qs("#user-email-display").textContent = email;
-  // create initial report if none
-  if (!loadReports().length) {
-    const r = createEmptyReport();
-    upsertReport(r);
-    loadReportIntoForm(r, false);
-  } else {
-    const reports = loadReports();
-    const inProg = reports.find(r => r.status === "in_progress");
-    const toLoad = inProg || reports[reports.length - 1];
-    if (toLoad) loadReportIntoForm(toLoad, false);
-  }
-  // show menu
-  const menuBtn = qsa('.nav-btn[data-panel="menu"]')[0];
-  if (menuBtn) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); menuBtn.classList.add("active"); showPanel("menu"); }
-});
-
-qs("#logout-btn").addEventListener("click", () => {
-  qs("#user-inline").classList.add("hidden");
-  qs("#login-inline").classList.remove("hidden");
-});
 
 /* ---------- storage ---------- */
 function loadReports() {
@@ -264,7 +253,6 @@ function openModal(title, bodyHtml, onSave) {
   modalBackdrop.classList.remove("hidden");
   modalBackdrop.setAttribute("aria-hidden","false");
   lastFocusedElement = document.activeElement;
-  // focus first focusable element inside modal
   setTimeout(() => {
     const focusable = modalBody.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
     if (focusable.length) focusable[0].focus();
@@ -286,15 +274,9 @@ function closeModal() {
 modalCancelBtn.addEventListener("click", closeModal);
 modalCloseBtn.addEventListener("click", closeModal);
 modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
+modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
 
-modalBackdrop.addEventListener("click", (e) => {
-  if (e.target === modalBackdrop) closeModal();
-});
-
-function escCloseModal(e) {
-  if (e.key === "Escape") closeModal();
-}
-
+function escCloseModal(e) { if (e.key === "Escape") closeModal(); }
 function trapTabKey(e) {
   if (e.key !== "Tab") return;
   const focusable = modalBackdrop.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
@@ -434,6 +416,7 @@ document.addEventListener("click", (e) => {
   }
 
   if (role === "edit") {
+    // edycja analogiczna do dodawania — otwieramy modal z wypełnionymi polami
     if (type === "loco") {
       const item = report.consist.locos[index];
       openModal("Edytuj lokomotywę", `
