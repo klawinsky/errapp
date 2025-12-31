@@ -1,34 +1,42 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>eRegioJet — Demo</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>eRegioJet — Demo</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
+  <div id="app" class="app">
+
     <!-- TOPBAR -->
     <header class="topbar">
-      <div class="brand">
-        <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
-          <path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zm9-6a6 6 0 0 1 5.196 8.999L12 12 6.804 14.999A6 6 0 0 1 12 6z"/>
-        </svg>
-        <div>
-          <div class="app-title">eRegioJet</div>
-          <div class="app-sub">Demo dla kierowników i dyspozytorów</div>
+      <div class="topbar-left">
+        <button id="sidebar-toggle" class="icon-btn" aria-label="Otwórz menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
+          <div class="brand-text">
+            <div class="brand-title">eRegioJet</div>
+            <div class="brand-sub">Demo — raporty pociągów</div>
+          </div>
         </div>
       </div>
 
-      <div class="auth" id="auth-area">
-        <div id="login-form" class="login-inline">
-          <input id="login-email" type="email" placeholder="email@firma.pl" />
-          <input id="login-password" type="password" placeholder="Hasło" />
+      <div class="topbar-right" id="auth-area">
+        <div id="login-inline" class="login-inline">
+          <input id="login-email" type="email" placeholder="email@firma.pl" aria-label="Email" />
+          <input id="login-password" type="password" placeholder="Hasło" aria-label="Hasło" />
           <button id="login-demo-btn" class="btn primary">Wejdź (DEMO)</button>
         </div>
 
-        <div id="user-panel" class="user-inline hidden">
-          <span id="user-email-display"></span>
+        <div id="user-inline" class="user-inline hidden" aria-hidden="true">
+          <span id="user-email-display" class="user-email">demo@eregiojet.local</span>
           <button id="logout-btn" class="btn ghost">Wyloguj</button>
         </div>
       </div>
@@ -36,20 +44,29 @@
 
     <!-- LAYOUT -->
     <div class="layout">
-      <nav class="sidebar" aria-label="Główne menu">
-        <ul>
-          <li><button class="nav-btn active" data-panel="menu">Menu</button></li>
-          <li><button class="nav-btn" data-panel="handle-train">Obsłuż pociąg</button></li>
-          <li><button class="nav-btn" data-panel="takeover">Przejmij pociąg</button></li>
-          <li><button class="nav-btn" data-panel="check">Sprawdź pociąg</button></li>
-          <li><button class="nav-btn" data-panel="dyspo">DyspoPanel</button></li>
-          <li class="external"><a href="https://www.regiojet.pl" target="_blank" rel="noopener">RegioJet</a></li>
-          <li class="external"><a href="https://portalpasazera.pl" target="_blank" rel="noopener">Rozkład Jazdy</a></li>
-          <li class="external"><a href="https://forms.gle/LN3Ma4Cmg9M5LG6N7" target="_blank" rel="noopener">Zgłoś Usterkę</a></li>
-        </ul>
-      </nav>
+      <!-- SIDEBAR -->
+      <aside id="sidebar" class="sidebar" aria-label="Główne menu">
+        <nav>
+          <ul>
+            <li><button class="nav-btn active" data-panel="menu">Menu</button></li>
+            <li><button class="nav-btn" data-panel="handle-train">Obsłuż pociąg</button></li>
+            <li><button class="nav-btn" data-panel="takeover">Przejmij pociąg</button></li>
+            <li><button class="nav-btn" data-panel="check">Sprawdź pociąg</button></li>
+            <li><button class="nav-btn" data-panel="dyspo">DyspoPanel</button></li>
+          </ul>
 
-      <main class="main">
+          <hr />
+
+          <ul class="external-links">
+            <li><a href="https://www.regiojet.pl" target="_blank" rel="noopener">RegioJet</a></li>
+            <li><a href="https://portalpasazera.pl" target="_blank" rel="noopener">Rozkład Jazdy</a></li>
+            <li><a href="https://forms.gle/LN3Ma4Cmg9M5LG6N7" target="_blank" rel="noopener">Zgłoś Usterkę</a></li>
+          </ul>
+        </nav>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="main" id="main">
         <!-- MENU PANEL -->
         <section id="panel-menu" class="panel active" aria-labelledby="menu-title">
           <div class="panel-header">
@@ -63,31 +80,39 @@
             <article class="card quick">
               <h3>Obsłuż pociąg</h3>
               <p>Twórz i edytuj raport z jazdy (kierownik pociągu).</p>
-              <button class="btn primary" data-open="handle-train">Przejdź</button>
+              <div class="card-actions">
+                <button class="btn primary" data-open="handle-train">Przejdź</button>
+              </div>
             </article>
 
             <article class="card quick">
               <h3>Przejmij pociąg</h3>
               <p>Lista pociągów przekazanych do przejęcia.</p>
-              <button class="btn" data-open="takeover">Przejdź</button>
+              <div class="card-actions">
+                <button class="btn" data-open="takeover">Przejdź</button>
+              </div>
             </article>
 
             <article class="card quick">
               <h3>Sprawdź pociąg</h3>
               <p>Podgląd raportów (tylko odczyt).</p>
-              <button class="btn" data-open="check">Przejdź</button>
+              <div class="card-actions">
+                <button class="btn" data-open="check">Przejdź</button>
+              </div>
             </article>
 
             <article class="card quick">
               <h3>DyspoPanel</h3>
               <p>Widok dyspozytorski — lista pociągów w obsłudze.</p>
-              <button class="btn" data-open="dyspo">Przejdź</button>
+              <div class="card-actions">
+                <button class="btn" data-open="dyspo">Przejdź</button>
+              </div>
             </article>
           </div>
         </section>
 
         <!-- HANDLE TRAIN -->
-        <section id="panel-handle-train" class="panel" aria-labelledby="handle-title">
+        <section id="panel-handle-train" class="panel" aria-labelledby="handle-title" hidden>
           <div class="panel-header">
             <h2 id="handle-title">Obsłuż pociąg — Raport z jazdy</h2>
             <div class="panel-actions">
@@ -166,7 +191,7 @@
         </section>
 
         <!-- TAKEOVER -->
-        <section id="panel-takeover" class="panel">
+        <section id="panel-takeover" class="panel" hidden>
           <div class="panel-header">
             <h2>Przejmij pociąg</h2>
             <div class="panel-actions">
@@ -180,7 +205,7 @@
         </section>
 
         <!-- CHECK -->
-        <section id="panel-check" class="panel">
+        <section id="panel-check" class="panel" hidden>
           <div class="panel-header">
             <h2>Sprawdź pociąg</h2>
             <div class="panel-actions">
@@ -194,7 +219,7 @@
         </section>
 
         <!-- DYSPO -->
-        <section id="panel-dyspo" class="panel">
+        <section id="panel-dyspo" class="panel" hidden>
           <div class="panel-header">
             <h2>DyspoPanel</h2>
             <div class="panel-actions">
@@ -214,7 +239,7 @@
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header class="modal-header">
           <h3 id="modal-title"></h3>
-          <button id="modal-close" class="btn ghost">✕</button>
+          <button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button>
         </header>
         <div id="modal-body" class="modal-body"></div>
         <footer class="modal-footer">
@@ -235,6 +260,7 @@
         </footer>
       </div>
     </div>
+
   </div>
 
   <script src="app.js"></script>
