@@ -9,13 +9,9 @@
 </head>
 <body>
   <div id="app" class="app">
-
-    <!-- TOPBAR -->
     <header class="topbar">
       <div class="topbar-left">
-        <button id="sidebar-toggle" class="icon-btn" aria-label="Otwórz menu">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
+        <button id="sidebar-toggle" class="icon-btn" aria-label="Otwórz menu">☰</button>
         <div class="brand">
           <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
           <div class="brand-text">
@@ -33,9 +29,7 @@
       </div>
     </header>
 
-    <!-- LAYOUT -->
     <div class="layout">
-      <!-- SIDEBAR -->
       <aside id="sidebar" class="sidebar" aria-label="Główne menu">
         <nav>
           <ul>
@@ -45,9 +39,7 @@
             <li><button class="nav-btn" data-panel="check">Sprawdź pociąg</button></li>
             <li><button class="nav-btn" data-panel="dyspo">DyspoPanel</button></li>
           </ul>
-
           <hr />
-
           <ul class="external-links">
             <li><a href="https://www.regiojet.pl" target="_blank" rel="noopener">RegioJet</a></li>
             <li><a href="https://portalpasazera.pl" target="_blank" rel="noopener">Rozkład Jazdy</a></li>
@@ -56,9 +48,8 @@
         </nav>
       </aside>
 
-      <!-- MAIN -->
       <main class="main" id="main">
-        <!-- MENU PANEL -->
+        <!-- MENU -->
         <section id="panel-menu" class="panel">
           <div class="panel-header">
             <h2>Menu</h2>
@@ -71,33 +62,25 @@
             <article class="card quick">
               <h3>Obsłuż pociąg</h3>
               <p>Twórz i edytuj raport z jazdy (kierownik pociągu).</p>
-              <div class="card-actions">
-                <button class="btn primary" data-open="handle-train">Przejdź</button>
-              </div>
+              <div class="card-actions"><button class="btn primary" data-open="handle-train">Przejdź</button></div>
             </article>
 
             <article class="card quick">
               <h3>Przejmij pociąg</h3>
               <p>Lista pociągów przekazanych do przejęcia.</p>
-              <div class="card-actions">
-                <button class="btn" data-open="takeover">Przejdź</button>
-              </div>
+              <div class="card-actions"><button class="btn" data-open="takeover">Przejdź</button></div>
             </article>
 
             <article class="card quick">
               <h3>Sprawdź pociąg</h3>
               <p>Podgląd raportów (tylko odczyt).</p>
-              <div class="card-actions">
-                <button class="btn" data-open="check">Przejdź</button>
-              </div>
+              <div class="card-actions"><button class="btn" data-open="check">Przejdź</button></div>
             </article>
 
             <article class="card quick">
               <h3>DyspoPanel</h3>
               <p>Widok dyspozytorski — lista pociągów w obsłudze.</p>
-              <div class="card-actions">
-                <button class="btn" data-open="dyspo">Przejdź</button>
-              </div>
+              <div class="card-actions"><button class="btn" data-open="dyspo">Przejdź</button></div>
             </article>
           </div>
         </section>
@@ -142,33 +125,25 @@
 
           <div class="card">
             <h3>C. Drużyna pociągowa</h3>
-            <div class="btn-row">
-              <button class="btn" id="add-crew-btn">Dodaj pracownika</button>
-            </div>
+            <div class="btn-row"><button class="btn" id="add-crew-btn">Dodaj pracownika</button></div>
             <table class="table" id="crew-table"><thead><tr><th>Imię i nazwisko</th><th>Funkcja</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead><tbody></tbody></table>
           </div>
 
           <div class="card">
             <h3>D. Dane o jeździe pociągu</h3>
-            <div class="btn-row">
-              <button class="btn" id="add-run-btn">Dodaj wpis</button>
-            </div>
+            <div class="btn-row"><button class="btn" id="add-run-btn">Dodaj wpis</button></div>
             <table class="table" id="run-table"><thead><tr><th>Stacja</th><th>Plan przyj.</th><th>Rzecz. przyj.</th><th>Odch. przyj.</th><th>Plan odj.</th><th>Rzecz. odj.</th><th>Odch. odj.</th><th>Powód</th><th>Rozkazy</th><th>Akcje</th></tr></thead><tbody></tbody></table>
           </div>
 
           <div class="card">
             <h3>E. Dyspozycje</h3>
-            <div class="btn-row">
-              <button class="btn" id="add-dispo-btn">Dodaj dyspozycję</button>
-            </div>
+            <div class="btn-row"><button class="btn" id="add-dispo-btn">Dodaj dyspozycję</button></div>
             <ul id="dispo-list" class="list"></ul>
           </div>
 
           <div class="card">
             <h3>F. Uwagi kierownika pociągu</h3>
-            <div class="btn-row">
-              <button class="btn" id="add-remark-btn">Dodaj uwagę</button>
-            </div>
+            <div class="btn-row"><button class="btn" id="add-remark-btn">Dodaj uwagę</button></div>
             <ul id="remark-list" class="list"></ul>
           </div>
 
@@ -185,9 +160,7 @@
         <section id="panel-takeover" class="panel" hidden>
           <div class="panel-header">
             <h2>Przejmij pociąg</h2>
-            <div class="panel-actions">
-              <button id="refresh-takeover" class="btn">Odśwież</button>
-            </div>
+            <div class="panel-actions"><button id="refresh-takeover" class="btn">Odśwież</button></div>
           </div>
           <div class="card">
             <p>Lista pociągów przekazanych do przejęcia.</p>
@@ -199,9 +172,7 @@
         <section id="panel-check" class="panel" hidden>
           <div class="panel-header">
             <h2>Sprawdź pociąg</h2>
-            <div class="panel-actions">
-              <button id="refresh-check" class="btn">Odśwież</button>
-            </div>
+            <div class="panel-actions"><button id="refresh-check" class="btn">Odśwież</button></div>
           </div>
           <div class="card">
             <p>Lista raportów (dziś i wczoraj) — tylko podgląd.</p>
@@ -213,9 +184,7 @@
         <section id="panel-dyspo" class="panel" hidden>
           <div class="panel-header">
             <h2>DyspoPanel</h2>
-            <div class="panel-actions">
-              <button id="refresh-dyspo" class="btn">Odśwież</button>
-            </div>
+            <div class="panel-actions"><button id="refresh-dyspo" class="btn">Odśwież</button></div>
           </div>
           <div class="card">
             <p>Lista pociągów w obsłudze. Widok odświeża się co 3 minuty.</p>
@@ -225,31 +194,17 @@
       </main>
     </div>
 
-    <!-- GENERIC MODAL -->
+    <!-- MODALE I POTWIERDZENIA -->
     <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <header class="modal-header">
-          <h3 id="modal-title"></h3>
-          <button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button>
-        </header>
+        <header class="modal-header"><h3 id="modal-title"></h3><button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button></header>
         <div id="modal-body" class="modal-body"></div>
-        <footer class="modal-footer">
-          <button id="modal-cancel-btn" class="btn ghost">Anuluj</button>
-          <button id="modal-save-btn" class="btn primary">Zapisz</button>
-        </footer>
+        <footer class="modal-footer"><button id="modal-cancel-btn" class="btn ghost">Anuluj</button><button id="modal-save-btn" class="btn primary">Zapisz</button></footer>
       </div>
     </div>
 
-    <!-- CONFIRM -->
     <div id="confirm-backdrop" class="modal-backdrop hidden" aria-hidden="true">
-      <div class="modal" role="dialog" aria-modal="true">
-        <header class="modal-header"><h3>Potwierdzenie</h3></header>
-        <div id="confirm-message" class="modal-body"></div>
-        <footer class="modal-footer">
-          <button id="confirm-cancel-btn" class="btn ghost">Nie</button>
-          <button id="confirm-ok-btn" class="btn warning">Tak</button>
-        </footer>
-      </div>
+      <div class="modal" role="dialog" aria-modal="true"><header class="modal-header"><h3>Potwierdzenie</h3></header><div id="confirm-message" class="modal-body"></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn ghost">Nie</button><button id="confirm-ok-btn" class="btn warning">Tak</button></footer></div>
     </div>
 
   </div>
