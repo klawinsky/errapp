@@ -1,72 +1,88 @@
-/* eRegioJet — poprawiona wersja
-   - nowoczesny wygląd
+/* eRegioJet — nowoczesne demo
    - zakładki otwierane z menu (jedna aktywna)
-   - wszystkie dane przez modale (dodaj/edytuj)
-   - localStorage jako demo "baza danych"
+   - dane przez modale (dodaj/edytuj)
+   - focus trap i Esc zamyka modal
+   - localStorage jako demo baza
 */
 
-const STORAGE_KEY = "eRegioJet_demo_v3";
+const STORAGE_KEY = "eRegioJet_demo_modern_v1";
+
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* ---------- pomocnicze selektory ---------- */
-const qs = (s, r = document) => r.querySelector(s);
+/* ---------- helpers ---------- */
+const qs = (s, r = document) => (r || document).querySelector(s);
 const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 
-/* ---------- NAV / PANELS ---------- */
+/* ---------- sidebar toggle (mobile) ---------- */
+const sidebar = qs("#sidebar");
+const sidebarToggle = qs("#sidebar-toggle");
+sidebarToggle.addEventListener("click", () => {
+  sidebar.classList.toggle("open");
+  sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
+});
+
+/* Close sidebar when clicking outside on small screens */
+document.addEventListener("click", (e) => {
+  if (!sidebar.classList.contains("open")) return;
+  if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
+  sidebar.classList.remove("open");
+});
+
+/* ---------- panel navigation ---------- */
 qsa(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     qsa(".nav-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     const panel = btn.getAttribute("data-panel");
     showPanel(panel);
+    // close sidebar on mobile
+    sidebar.classList.remove("open");
   });
 });
 
 qsa("[data-open]").forEach(b => b.addEventListener("click", () => {
   const panel = b.getAttribute("data-open");
-  // activate corresponding nav button
   const nav = qsa(`.nav-btn[data-panel="${panel}"]`)[0];
-  if (nav) { nav.click(); } else { showPanel(panel); }
+  if (nav) nav.click(); else showPanel(panel);
 }));
 
 function showPanel(name) {
-  qsa(".panel").forEach(p => p.classList.remove("active"));
+  qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
-  if (el) el.classList.add("active");
+  if (el) el.hidden = false;
+  // ensure lists refreshed when opening certain panels
+  if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
-/* ---------- AUTH (demo) ---------- */
+/* ---------- auth demo ---------- */
 qs("#login-demo-btn").addEventListener("click", () => {
   const email = qs("#login-email").value.trim() || "demo@eregiojet.local";
-  qs("#login-form").classList.add("hidden");
-  qs("#user-panel").classList.remove("hidden");
+  qs("#login-inline").classList.add("hidden");
+  qs("#user-inline").classList.remove("hidden");
   qs("#user-email-display").textContent = email;
-  // ensure at least one report exists
+  // create initial report if none
   if (!loadReports().length) {
     const r = createEmptyReport();
     upsertReport(r);
     loadReportIntoForm(r, false);
   } else {
-    // load last in_progress or newest
     const reports = loadReports();
     const inProg = reports.find(r => r.status === "in_progress");
     const toLoad = inProg || reports[reports.length - 1];
     if (toLoad) loadReportIntoForm(toLoad, false);
   }
   // show menu
-  qsa(".nav-btn").forEach(b => b.classList.remove("active"));
   const menuBtn = qsa('.nav-btn[data-panel="menu"]')[0];
-  if (menuBtn) menuBtn.classList.add("active");
-  showPanel("menu");
+  if (menuBtn) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); menuBtn.classList.add("active"); showPanel("menu"); }
 });
 
 qs("#logout-btn").addEventListener("click", () => {
-  qs("#user-panel").classList.add("hidden");
-  qs("#login-form").classList.remove("hidden");
+  qs("#user-inline").classList.add("hidden");
+  qs("#login-inline").classList.remove("hidden");
 });
 
-/* ---------- STORAGE ---------- */
+/* ---------- storage ---------- */
 function loadReports() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
@@ -93,7 +109,7 @@ function upsertReport(report) {
   saveReports(reports);
 }
 
-/* ---------- FORM READ/WRITE ---------- */
+/* ---------- form read/write ---------- */
 function readReportFromForm() {
   if (!currentReportId) currentReportId = Date.now().toString();
   let report = getReportById(currentReportId);
@@ -150,21 +166,21 @@ function updateStatusLabel(report) {
   });
 });
 
-/* ---------- RENDER ---------- */
+/* ---------- render helpers ---------- */
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
   locoTbody.innerHTML = ""; wagonTbody.innerHTML = "";
   report.consist.locos.forEach((l, i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from)}</td><td>${escapeHtml(l.to)}</td>
-      <td><button class="btn small" data-role="edit" data-type="loco" data-index="${i}">Edytuj</button>
+      <td class="action-group"><button class="btn small" data-role="edit" data-type="loco" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="loco" data-index="${i}">Usuń</button></td>`;
     locoTbody.appendChild(tr);
   });
   report.consist.wagons.forEach((w, i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(w.mark)}</td><td>${escapeHtml(w.from)}</td><td>${escapeHtml(w.to)}</td>
-      <td><button class="btn small" data-role="edit" data-type="wagon" data-index="${i}">Edytuj</button>
+      <td class="action-group"><button class="btn small" data-role="edit" data-type="wagon" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="wagon" data-index="${i}">Usuń</button></td>`;
     wagonTbody.appendChild(tr);
   });
@@ -175,7 +191,7 @@ function renderCrew(report) {
   report.crew.forEach((c,i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role)}</td><td>${escapeHtml(c.from)}</td><td>${escapeHtml(c.to)}</td>
-      <td><button class="btn small" data-role="edit" data-type="crew" data-index="${i}">Edytuj</button>
+      <td class="action-group"><button class="btn small" data-role="edit" data-type="crew" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="crew" data-index="${i}">Usuń</button></td>`;
     tbody.appendChild(tr);
   });
@@ -204,7 +220,7 @@ function renderRuns(report) {
       <td>${escapeHtml(r.plannedArr || "")}</td><td>${escapeHtml(r.actualArr || "")}</td><td>${formatDelayCell(delayArr)}</td>
       <td>${escapeHtml(r.plannedDep || "")}</td><td>${escapeHtml(r.actualDep || "")}</td><td>${formatDelayCell(delayDep)}</td>
       <td>${escapeHtml(r.delayReason || "")}</td><td>${escapeHtml(r.orders || "")}</td>
-      <td><button class="btn small" data-role="edit" data-type="run" data-index="${i}">Edytuj</button>
+      <td class="action-group"><button class="btn small" data-role="edit" data-type="run" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="run" data-index="${i}">Usuń</button></td>`;
     tbody.appendChild(tr);
   });
@@ -231,7 +247,7 @@ function renderRemarks(report) {
   });
 }
 
-/* ---------- MODAL SYSTEM ---------- */
+/* ---------- modal system with focus trap ---------- */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -239,6 +255,7 @@ const modalSaveBtn = qs("#modal-save-btn");
 const modalCancelBtn = qs("#modal-cancel-btn");
 const modalCloseBtn = qs("#modal-close");
 let modalSaveHandler = null;
+let lastFocusedElement = null;
 
 function openModal(title, bodyHtml, onSave) {
   modalTitle.textContent = title;
@@ -246,42 +263,52 @@ function openModal(title, bodyHtml, onSave) {
   modalSaveHandler = onSave;
   modalBackdrop.classList.remove("hidden");
   modalBackdrop.setAttribute("aria-hidden","false");
-  // focus first input
+  lastFocusedElement = document.activeElement;
+  // focus first focusable element inside modal
   setTimeout(() => {
-    const first = modalBody.querySelector("input,select,textarea,button");
-    if (first) first.focus();
-  }, 50);
+    const focusable = modalBody.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
+    if (focusable.length) focusable[0].focus();
+    else modalSaveBtn.focus();
+  }, 40);
+  document.addEventListener("keydown", trapTabKey);
+  document.addEventListener("keydown", escCloseModal);
 }
+
 function closeModal() {
   modalBackdrop.classList.add("hidden");
   modalBackdrop.setAttribute("aria-hidden","true");
   modalSaveHandler = null;
+  if (lastFocusedElement) lastFocusedElement.focus();
+  document.removeEventListener("keydown", trapTabKey);
+  document.removeEventListener("keydown", escCloseModal);
 }
+
 modalCancelBtn.addEventListener("click", closeModal);
 modalCloseBtn.addEventListener("click", closeModal);
 modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
 
-/* Confirm */
-const confirmBackdrop = qs("#confirm-backdrop");
-const confirmMessage = qs("#confirm-message");
-const confirmOkBtn = qs("#confirm-ok-btn");
-const confirmCancelBtn = qs("#confirm-cancel-btn");
-let confirmHandler = null;
-function openConfirm(message, onOk) {
-  confirmMessage.textContent = message;
-  confirmHandler = onOk;
-  confirmBackdrop.classList.remove("hidden");
-  confirmBackdrop.setAttribute("aria-hidden","false");
-}
-function closeConfirm() {
-  confirmBackdrop.classList.add("hidden");
-  confirmBackdrop.setAttribute("aria-hidden","true");
-  confirmHandler = null;
-}
-confirmCancelBtn.addEventListener("click", closeConfirm);
-confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
+modalBackdrop.addEventListener("click", (e) => {
+  if (e.target === modalBackdrop) closeModal();
+});
 
-/* ---------- ADD / EDIT ACTIONS (modale) ---------- */
+function escCloseModal(e) {
+  if (e.key === "Escape") closeModal();
+}
+
+function trapTabKey(e) {
+  if (e.key !== "Tab") return;
+  const focusable = modalBackdrop.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey) {
+    if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+  } else {
+    if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+}
+
+/* ---------- add / edit actions (modale) ---------- */
 qs("#add-loco-btn").addEventListener("click", () => {
   const report = readReportFromForm();
   openModal("Dodaj lokomotywę", `
@@ -511,7 +538,7 @@ document.addEventListener("click", (e) => {
   }
 });
 
-/* ---------- SAVE / PDF / FINISH / HANDOVER ---------- */
+/* ---------- save / pdf / finish / handover ---------- */
 qs("#save-report-btn").addEventListener("click", () => {
   const r = readReportFromForm();
   upsertReport(r);
@@ -546,7 +573,7 @@ qs("#handover-btn").addEventListener("click", () => {
   alert("Pociąg przekazany do przejęcia.");
 });
 
-/* ---------- LISTS: takeover / check / dyspo ---------- */
+/* ---------- lists: takeover / check / dyspo ---------- */
 function refreshLists() {
   const reports = loadReports();
 
@@ -605,16 +632,13 @@ document.addEventListener("click", (e) => {
     report.status = "in_progress";
     upsertReport(report);
     loadReportIntoForm(report, false);
-    // switch to handle-train panel
-    qsa(".nav-btn").forEach(b => b.classList.remove("active"));
     const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
-    if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
+    if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); showPanel("handle-train"); }
     refreshLists();
   } else if (action === "preview") {
     loadReportIntoForm(report, true);
-    qsa(".nav-btn").forEach(b => b.classList.remove("active"));
     const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
-    if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
+    if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); showPanel("handle-train"); }
   }
 });
 
@@ -626,7 +650,7 @@ qs("#refresh-dyspo").addEventListener("click", refreshLists);
 /* auto-refresh dyspo when visible every 3 minutes */
 setInterval(() => {
   const el = qs("#panel-dyspo");
-  if (el && el.classList.contains("active")) refreshLists();
+  if (el && !el.hidden) refreshLists();
 }, 3 * 60 * 1000);
 
 /* new report */
@@ -634,9 +658,8 @@ qs("#new-report-btn").addEventListener("click", () => {
   const r = createEmptyReport();
   upsertReport(r);
   loadReportIntoForm(r, false);
-  qsa(".nav-btn").forEach(b => b.classList.remove("active"));
   const nav = qsa('.nav-btn[data-panel="handle-train"]')[0];
-  if (nav) { nav.classList.add("active"); showPanel("handle-train"); }
+  if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); showPanel("handle-train"); }
   refreshLists();
 });
 
@@ -648,6 +671,27 @@ window.addEventListener("load", () => {
   }
   refreshLists();
 });
+
+/* ---------- confirm modal ---------- */
+const confirmBackdrop = qs("#confirm-backdrop");
+const confirmMessage = qs("#confirm-message");
+const confirmOkBtn = qs("#confirm-ok-btn");
+const confirmCancelBtn = qs("#confirm-cancel-btn");
+let confirmHandler = null;
+function openConfirm(message, onOk) {
+  confirmMessage.textContent = message;
+  confirmHandler = onOk;
+  confirmBackdrop.classList.remove("hidden");
+  confirmBackdrop.setAttribute("aria-hidden","false");
+  confirmCancelBtn.focus();
+}
+function closeConfirm() {
+  confirmBackdrop.classList.add("hidden");
+  confirmBackdrop.setAttribute("aria-hidden","true");
+  confirmHandler = null;
+}
+confirmCancelBtn.addEventListener("click", closeConfirm);
+confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
 /* ---------- utilities ---------- */
 function escapeHtml(s){ if (!s && s!==0) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
