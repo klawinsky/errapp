@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>eRegioJet - Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- PANEL LOGOWANIA -->
+    <section id="login-screen" class="screen active">
+      <div class="card">
+        <h1>eRegioJet</h1>
+        <p class="subtitle">Panel logowania eRJ (demo)</p>
+        <label>
+          <span>Email</span>
+          <input type="email" id="login-email" placeholder="twoj.mail@regiojet.pl" />
+        </label>
+        <label>
+          <span>Hasło</span>
+          <input type="password" id="login-password" placeholder="••••••••" />
+        </label>
+        <button id="login-demo-btn" class="btn primary">Wejdź w trybie DEMO</button>
+        <p class="hint">
+          Wersja demo: logowanie nie jest jeszcze podłączone do prawdziwej bazy danych.
+        </p>
+      </div>
+    </section>
+
+    <!-- MENU GŁÓWNE -->
+    <section id="menu-screen" class="screen">
+      <header class="top-bar">
+        <h2>eRegioJet - Menu główne</h2>
+        <button id="logout-btn" class="btn small">Wyloguj</button>
+      </header>
+      <div class="card grid-menu">
+        <button class="btn menu" data-target="handle-train-screen">Obsłuż pociąg</button>
+        <button class="btn menu" data-target="takeover-screen">Przejmij pociąg</button>
+        <button class="btn menu" data-target="check-train-screen">Sprawdź pociąg</button>
+        <button class="btn menu" data-target="dyspo-screen">DyspoPanel</button>
+      </div>
+
+      <div class="card external-links">
+        <h3>Przydatne linki</h3>
+        <div class="links-row">
+          <a href="https://www.regiojet.pl" target="_blank" class="btn link">RegioJet</a>
+          <a href="https://portalpasazera.pl" target="_blank" class="btn link">Rozkład Jazdy</a>
+          <a href="https://forms.gle/LN3Ma4Cmg9M5LG6N7" target="_blank" class="btn link">Zgłoś Usterkę</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- OBSŁUŻ POCIĄG -->
+    <section id="handle-train-screen" class="screen">
+      <header class="top-bar">
+        <button class="btn small" data-target="menu-screen">← Menu</button>
+        <h2>Obsłuż pociąg (Raport z jazdy)</h2>
+      </header>
+      <div class="content">
+        <!-- A: Dane ogólne -->
+        <div class="card">
+          <h3>A. Dane ogólne</h3>
+          <div class="grid-2">
+            <label>
+              <span>Numer pociągu</span>
+              <input type="text" id="general-train-number" />
+            </label>
+            <label>
+              <span>Dzień kursowania</span>
+              <input type="date" id="general-date" />
+            </label>
+            <label>
+              <span>Stacja od</span>
+              <input type="text" id="general-from" />
+            </label>
+            <label>
+              <span>Stacja do</span>
+              <input type="text" id="general-to" />
+            </label>
+          </div>
+        </div>
+
+        <!-- B: Skład pociągu -->
+        <div class="card">
+          <h3>B. Skład pociągu</h3>
+          <div class="btn-row">
+            <button class="btn secondary" id="add-loco-btn">Dodaj lok</button>
+            <button class="btn secondary" id="add-wagon-btn">Dodaj wagon</button>
+          </div>
+          <h4>Lokomotywy</h4>
+          <table class="table" id="loco-table">
+            <thead>
+              <tr>
+                <th>Oznaczenie</th>
+                <th>Stacja od</th>
+                <th>Stacja do</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+
+          <h4>Wagony</h4>
+          <table class="table" id="wagon-table">
+            <thead>
+              <tr>
+                <th>Oznaczenie</th>
+                <th>Stacja od</th>
+                <th>Stacja do</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- C: Drużyna pociągowa -->
+        <div class="card">
+          <h3>C. Drużyna pociągowa</h3>
+          <button class="btn secondary" id="add-crew-btn">Dodaj pracownika</button>
+          <table class="table" id="crew-table">
+            <thead>
+              <tr>
+                <th>Imię i nazwisko</th>
+                <th>Funkcja</th>
+                <th>Stacja od</th>
+                <th>Stacja do</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- D: Dane o jeździe pociągu -->
+        <div class="card">
+          <h3>D. Dane o jeździe pociągu</h3>
+          <button class="btn secondary" id="add-run-btn">Dodaj wpis</button>
+          <table class="table" id="run-table">
+            <thead>
+              <tr>
+                <th>Stacja</th>
+                <th>Plan przyj.</th>
+                <th>Rzecz. przyj.</th>
+                <th>Odchylenie przyj.</th>
+                <th>Plan odj.</th>
+                <th>Rzecz. odj.</th>
+                <th>Odchylenie odj.</th>
+                <th>Powód opóźnienia</th>
+                <th>Otrzymane rozkazy</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- E: Dyspozycje -->
+        <div class="card">
+          <h3>E. Dyspozycje</h3>
+          <button class="btn secondary" id="add-dispo-btn">Dodaj dyspozycję</button>
+          <ul id="dispo-list" class="list"></ul>
+        </div>
+
+        <!-- F: Uwagi kierownika pociągu -->
+        <div class="card">
+          <h3>F. Uwagi kierownika pociągu</h3>
+          <button class="btn secondary" id="add-remark-btn">Dodaj uwagę</button>
+          <ul id="remark-list" class="list"></ul>
+        </div>
+
+        <!-- Przyciski na dole -->
+        <div class="sticky-footer card">
+          <button class="btn" id="generate-pdf-btn">Generuj PDF (drukuj)</button>
+          <button class="btn warning" id="finish-btn">Zakończ obsługę</button>
+          <button class="btn secondary" id="handover-btn">Przekaż obsługę</button>
+          <span class="status-label" id="report-status-label"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRZEJMIJ POCIĄG -->
+    <section id="takeover-screen" class="screen">
+      <header class="top-bar">
+        <button class="btn small" data-target="menu-screen">← Menu</button>
+        <h2>Przejmij pociąg</h2>
+      </header>
+      <div class="card">
+        <p>Lista pociągów przekazanych do przejęcia.</p>
+        <table class="table" id="takeover-table">
+          <thead>
+            <tr>
+              <th>Numer pociągu</th>
+              <th>Relacja</th>
+              <th>Dzień kursu</th>
+              <th>Akcja</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint">
+          Po kliknięciu „Przejmij” raport zostanie załadowany do modułu „Obsłuż pociąg”.
+        </p>
+      </div>
+    </section>
+
+    <!-- SPRAWDŹ POCIĄG -->
+    <section id="check-train-screen" class="screen">
+      <header class="top-bar">
+        <button class="btn small" data-target="menu-screen">← Menu</button>
+        <h2>Sprawdź pociąg</h2>
+      </header>
+      <div class="card">
+        <p>Lista pociągów z raportami z jazdy (dziś i dzień poprzedni).</p>
+        <table class="table" id="check-table">
+          <thead>
+            <tr>
+              <th>Numer pociągu</th>
+              <th>Relacja</th>
+              <th>Dzień kursu</th>
+              <th>Podgląd</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint">
+          Po wybraniu pociągu zobaczysz raport z jazdy w trybie tylko do odczytu (bez edycji).
+        </p>
+      </div>
+    </section>
+
+    <!-- DYSPOPANEL -->
+    <section id="dyspo-screen" class="screen">
+      <header class="top-bar">
+        <button class="btn small" data-target="menu-screen">← Menu</button>
+        <h2>DyspoPanel</h2>
+      </header>
+      <div class="card">
+        <p>Lista pociągów, dla których aktualnie prowadzony jest raport z jazdy.</p>
+        <p class="hint">Widok odświeża się automatycznie co 3 minuty.</p>
+        <table class="table" id="dyspo-table">
+          <thead>
+            <tr>
+              <th>Numer pociągu</th>
+              <th>Relacja</th>
+              <th>Ostatnia stacja</th>
+              <th>Odchylenie (minuty)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="hint">
+          Pociągi opóźnione powyżej 20 minut są podświetlone migającym czerwonym wierszem.
+        </p>
+      </div>
+    </section>
+
+    <!-- MODALE (okna) -->
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <h3 id="modal-title"></h3>
+        <div id="modal-body"></div>
+        <div class="modal-actions">
+          <button class="btn secondary" id="modal-cancel-btn">Anuluj</button>
+          <button class="btn primary" id="modal-save-btn">Zapisz</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prosty modal potwierdzenia -->
+    <div id="confirm-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <h3 id="confirm-title">Potwierdzenie</h3>
+        <p id="confirm-message"></p>
+        <div class="modal-actions">
+          <button class="btn secondary" id="confirm-cancel-btn">Nie</button>
+          <button class="btn warning" id="confirm-ok-btn">Tak</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
