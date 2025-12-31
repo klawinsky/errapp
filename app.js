@@ -17,19 +17,23 @@ const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s))
 (function ensureLoggedIn() {
   const user = sessionStorage.getItem('eRJ_user');
   if (!user) {
-    // jeśli nie ma sessionStorage, spróbuj Supabase auth
     (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data && data.user && data.user.id) {
-        sessionStorage.setItem('eRJ_user', data.user.id);
-        qs('#user-email-display').textContent = data.user.email || data.user.id;
-      } else {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data && data.user && data.user.id) {
+          sessionStorage.setItem('eRJ_user', data.user.id);
+          qs('#user-email-display').textContent = data.user.email || data.user.id;
+        } else {
+          window.location.href = 'index.html';
+        }
+      } catch (e) {
         window.location.href = 'index.html';
       }
     })();
     return;
   }
-  qs('#user-email-display').textContent = user;
+  const display = qs('#user-email-display');
+  if (display) display.textContent = user;
 })();
 
 /* sidebar toggle */
@@ -53,7 +57,6 @@ if (sidebarToggle && sidebar) {
 const logoutBtn = qs("#logout-btn");
 if (logoutBtn) {
   logoutBtn.addEventListener("click", async () => {
-    // jeśli użyto Supabase Auth, wyloguj też z Supabase
     try { await supabase.auth.signOut(); } catch(e) {}
     sessionStorage.removeItem('eRJ_user');
     window.location.href = 'index.html';
@@ -86,8 +89,12 @@ function showPanel(name) {
 async function getCurrentUid() {
   const sessionUser = sessionStorage.getItem('eRJ_user');
   if (sessionUser) return sessionUser;
-  const { data } = await supabase.auth.getUser();
-  return data?.user?.id || null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function loadReports() {
@@ -272,7 +279,7 @@ function renderRemarks(report) {
   });
 }
 
-/* modal system (jak wcześniej) */
+/* modal system */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -452,11 +459,8 @@ document.addEventListener("click", async (e) => {
     refreshLists();
   }
   if (role === "edit") {
-    // fetch row and open modal to edit (simplified: fetch single row)
     const { data, error } = await supabase.from(type === 'consist' ? 'consist' : type).select('*').eq('id', id).single();
     if (error || !data) { alert('Błąd pobierania rekordu'); return; }
-    // build modal based on type (omitted full code for brevity) - implement similar to add modals
-    // For demo: allow editing only text fields for dispos/remarks, or full edit for runs/consist/crew
     if (type === 'dispo') {
       openModal("Edytuj dyspozycję", `
         <label><span>Źródło</span><input id="modal-dispo-source" type="text" value="${escapeAttr(data.source)}" /></label>
@@ -509,7 +513,6 @@ if (generatePdfBtn) generatePdfBtn.addEventListener("click", async () => {
 });
 
 if (qs("#finish-btn")) qs("#finish-btn").addEventListener("click", async () => {
-  const report = await readReportFromForm();
   if (!currentReportId) { alert('Brak aktywnego raportu'); return; }
   openConfirm("Zamknięcie obsługi spowoduje ostateczne zapisanie danych. Czy chcesz zamknąć?", async () => {
     await updateReportFields(currentReportId, { status: 'finished' });
@@ -534,7 +537,6 @@ if (qs("#handover-btn")) qs("#handover-btn").addEventListener("click", async () 
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid) return;
-  // takeover: reports with status handed_over
   const { data: takeoverData } = await supabase.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
   const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
   (takeoverData || []).forEach(r => {
@@ -544,7 +546,6 @@ async function refreshLists() {
     takeoverTbody.appendChild(tr);
   });
 
-  // check: today and yesterday
   const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
   const dateToStr = d => d.toISOString().slice(0,10);
   const { data: allReports } = await supabase.from('reports').select('*').order('created_at', { ascending: false });
@@ -559,7 +560,6 @@ async function refreshLists() {
     }
   });
 
-  // dyspo: active reports (not finished)
   const { data: activeReports } = await supabase.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
   const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
   for (const r of (activeReports || [])) {
@@ -670,10 +670,8 @@ function loadReportIntoForm(report, isReadOnly) {
 
 /* initial load */
 window.addEventListener("load", async () => {
-  // jeśli istnieje aktywny raport w localStorage (stare demo), nie migruj automatycznie
   const reports = await loadReports();
   if (reports && reports.length) {
-    // załaduj ostatni w trakcie lub pierwszy
     const inProg = reports.find(r => r.status === 'in_progress');
     const toLoad = inProg || reports[0];
     if (toLoad) {
@@ -723,6 +721,99 @@ function openPrintWindow(report) {
     @media print{@page{size:A4;margin:12mm}}
   `;
   const html = `
-    <!doctype html><html><head><meta charset="utf-8"/><title>Raport ${escapeHtml(report.train_number||'')}</title><style>${css}</style></head><body>
-    <h1>Raport z jazdy — ${escapeHtml(report.train_number||'')}</h1>
-    <div class="small">Data: ${escapeHtml(report
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>Raport pociągu ${escapeHtml(report.train_number || "")}</title>
+        <style>${css}</style>
+      </head>
+      <body>
+        <h1>Raport z jazdy — ${escapeHtml(report.train_number || "")}</h1>
+        <div class="small">Data: ${escapeHtml(report.date || "")} | Relacja: ${escapeHtml(report.from_station || "")} – ${escapeHtml(report.to_station || "")}</div>
+
+        <div class="section">
+          <h2>Dane ogólne</h2>
+          <table>
+            <tr><th>Numer pociągu</th><td>${escapeHtml(report.train_number || "")}</td></tr>
+            <tr><th>Dzień kursowania</th><td>${escapeHtml(report.date || "")}</td></tr>
+            <tr><th>Stacja od</th><td>${escapeHtml(report.from_station || "")}</td></tr>
+            <tr><th>Stacja do</th><td>${escapeHtml(report.to_station || "")}</td></tr>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Skład pociągu</h2>
+          <table>
+            <thead><tr><th>Typ</th><th>Oznaczenie</th><th>Od</th><th>Do</th></tr></thead>
+            <tbody>
+              ${(report.consist || []).map(l => `<tr><td>${escapeHtml(l.type === 'loco' ? 'Lok' : 'Wagon')}</td><td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from_station)}</td><td>${escapeHtml(l.to_station)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Drużyna pociągowa</h2>
+          <table>
+            <thead><tr><th>Imię i nazwisko</th><th>Funkcja</th><th>Od</th><th>Do</th></tr></thead>
+            <tbody>
+              ${(report.crew || []).map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role)}</td><td>${escapeHtml(c.from_station)}</td><td>${escapeHtml(c.to_station)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Dane o jeździe pociągu</h2>
+          <table>
+            <thead><tr><th>Stacja</th><th>Plan przyj.</th><th>Rzecz. przyj.</th><th>Odch. (min)</th><th>Plan odj.</th><th>Rzecz. odj.</th><th>Odch. (min)</th><th>Powód</th><th>Rozkazy</th></tr></thead>
+            <tbody>
+              ${(report.runs || []).map(r => {
+                const arrDelay = calculateDelayMinutes(r.planned_arr, r.actual_arr);
+                const depDelay = calculateDelayMinutes(r.planned_dep, r.actual_dep);
+                return `<tr>
+                  <td>${escapeHtml(r.station)}</td>
+                  <td>${escapeHtml(r.planned_arr || "")}</td>
+                  <td>${escapeHtml(r.actual_arr || "")}</td>
+                  <td>${arrDelay === null ? "" : (arrDelay>0?("+"+arrDelay):arrDelay)}</td>
+                  <td>${escapeHtml(r.planned_dep || "")}</td>
+                  <td>${escapeHtml(r.actual_dep || "")}</td>
+                  <td>${depDelay === null ? "" : (depDelay>0?("+"+depDelay):depDelay)}</td>
+                  <td>${escapeHtml(r.delay_reason || "")}</td>
+                  <td>${escapeHtml(r.orders || "")}</td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Dyspozycje</h2>
+          <table>
+            <thead><tr><th>Źródło</th><th>Treść</th></tr></thead>
+            <tbody>
+              ${(report.dispos || []).map(d => `<tr><td>${escapeHtml(d.source)}</td><td>${escapeHtml(d.text)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Uwagi kierownika</h2>
+          <table>
+            <tbody>
+              ${(report.remarks || []).map(r => `<tr><td>${escapeHtml(r.text)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <script>setTimeout(()=>{window.print();},200);</script>
+      </body>
+    </html>
+  `;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+/* utilities for escaping used above already defined */
+
+/* end of file */
