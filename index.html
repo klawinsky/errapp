@@ -19,7 +19,7 @@
       </div>
 
       <h1>Logowanie</h1>
-      <p class="muted">Użyj konta nadanego przez administratora lub wejdź w trybie DEMO.</p>
+      <p class="muted">Zaloguj się lub użyj trybu DEMO. Wersja demo nie łączy się z serwerem.</p>
 
       <label class="field">
         <span>Email</span>
@@ -32,43 +32,49 @@
       </label>
 
       <div class="login-actions">
-        <button id="login-btn" class="btn primary">Zaloguj</button>
+        <button id="login-btn" class="btn primary">Zaloguj (Supabase)</button>
         <button id="login-demo-btn" class="btn ghost">Wejdź (DEMO)</button>
       </div>
 
-      <p class="hint">Wersja demo: logowanie nie łączy się z serwerem. Po zalogowaniu zostaniesz przeniesiony do aplikacji.</p>
+      <p class="hint">W demo: kliknij Wejdź (DEMO) lub wprowadź dane i kliknij Zaloguj (jeśli skonfigurowano Supabase Auth).</p>
     </div>
 
     <footer class="login-footer">
-      <small>eRegioJet — demo. Strona logowania jest oddzielna — bez zalogowania brak dostępu do aplikacji.</small>
+      <small>eRegioJet — demo. Bez zalogowania brak dostępu do aplikacji.</small>
     </footer>
   </main>
 
+  <!-- Supabase SDK + prosta inicjalizacja anon key -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
   <script>
-    // Proste zachowanie logowania: zapisujemy flagę w sessionStorage i przekierowujemy do app.html
+    // Zastąp wartości poniżej swoimi danymi z panelu Supabase
+    const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
+    const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_ANON_KEY';
+    window.supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  </script>
+
+  <script>
+    // Demo login: zapisujemy flagę w sessionStorage i przekierowujemy do app.html
     document.getElementById('login-demo-btn').addEventListener('click', () => {
       const email = document.getElementById('login-email').value.trim() || 'demo@eregiojet.local';
       sessionStorage.setItem('eRJ_user', email);
-      // Przekieruj do aplikacji
       window.location.href = 'app.html';
     });
 
-    document.getElementById('login-btn').addEventListener('click', () => {
-      // W demo akceptujemy dowolne dane, ale możesz tu dodać walidację
+    // Supabase email/password login (jeśli skonfigurowano Auth)
+    document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('login-email').value.trim();
       const pass = document.getElementById('login-password').value;
-      if (!email || !pass) {
-        alert('Podaj email i hasło (w demo dowolne).');
-        return;
-      }
-      sessionStorage.setItem('eRJ_user', email);
+      if (!email || !pass) { alert('Podaj email i hasło.'); return; }
+      const { data, error } = await window.supabase.auth.signInWithPassword({ email, password: pass });
+      if (error) { alert('Błąd logowania: ' + error.message); return; }
+      sessionStorage.setItem('eRJ_user', data.user.id);
       window.location.href = 'app.html';
     });
 
-    // Jeśli użytkownik już jest zalogowany, od razu przejdź do aplikacji
+    // Jeśli już zalogowany (sessionStorage), przekieruj
     if (sessionStorage.getItem('eRJ_user')) {
-      // mały delay, żeby użytkownik zobaczył że jest przekierowywany
-      setTimeout(() => { window.location.href = 'app.html'; }, 200);
+      setTimeout(() => { window.location.href = 'app.html'; }, 150);
     }
   </script>
 </body>
