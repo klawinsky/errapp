@@ -1,10 +1,12 @@
 /* app.js
-   eRegioJet demo — logika aplikacji
+   eRegioJet demo — logika aplikacji (poprawiona)
    - wymaga zalogowania (sprawdzane przez sessionStorage)
    - nav działa (otwieranie zakładek)
-   - hamburger działa
+   - hamburger działa (poprawione sprawdzanie elementów i zamykanie)
    - modale działają z focus trap i Esc
    - dane w localStorage (STORAGE_KEY)
+   - poprawione obliczanie opóźnień (wybór największego opóźnienia, obsługa null)
+   - dedykowany wydruk PDF (otwiera nowe okno z czytelnym A4)
 */
 
 const STORAGE_KEY = "eRegioJet_demo_modern_v2";
@@ -20,31 +22,51 @@ const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s))
 (function ensureLoggedIn() {
   const user = sessionStorage.getItem('eRJ_user');
   if (!user) {
-    // jeśli brak logowania, wróć do strony logowania
     window.location.href = 'index.html';
     return;
   }
-  qs('#user-email-display').textContent = user;
+  const userDisplay = qs('#user-email-display');
+  if (userDisplay) userDisplay.textContent = user;
 })();
 
 /* ---------- sidebar toggle (mobile) ---------- */
 const sidebar = qs("#sidebar");
 const sidebarToggle = qs("#sidebar-toggle");
-sidebarToggle.addEventListener("click", () => {
-  sidebar.classList.toggle("open");
-  sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
-});
-document.addEventListener("click", (e) => {
-  if (!sidebar.classList.contains("open")) return;
-  if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
-  sidebar.classList.remove("open");
-});
+
+// defensive: upewnij się, że elementy istnieją
+if (sidebarToggle && sidebar) {
+  sidebarToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle("open");
+    sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
+  });
+
+  // Close sidebar when clicking outside on small screens
+  document.addEventListener("click", (e) => {
+    if (!sidebar.classList.contains("open")) return;
+    if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
+    sidebar.classList.remove("open");
+    sidebarToggle.setAttribute("aria-expanded", "false");
+  });
+
+  // Close sidebar with Escape
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.classList.contains("open")) {
+      sidebar.classList.remove("open");
+      sidebarToggle.setAttribute("aria-expanded", "false");
+      sidebarToggle.focus();
+    }
+  });
+}
 
 /* ---------- logout ---------- */
-qs("#logout-btn").addEventListener("click", () => {
-  sessionStorage.removeItem('eRJ_user');
-  window.location.href = 'index.html';
-});
+const logoutBtn = qs("#logout-btn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", () => {
+    sessionStorage.removeItem('eRJ_user');
+    window.location.href = 'index.html';
+  });
+}
 
 /* ---------- panel navigation ---------- */
 qsa(".nav-btn").forEach(btn => {
@@ -54,7 +76,8 @@ qsa(".nav-btn").forEach(btn => {
     const panel = btn.getAttribute("data-panel");
     showPanel(panel);
     // close sidebar on mobile
-    sidebar.classList.remove("open");
+    if (sidebar) sidebar.classList.remove("open");
+    if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", "false");
   });
 });
 
@@ -68,6 +91,7 @@ function showPanel(name) {
   qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
   if (el) el.hidden = false;
+  // refresh lists for dynamic panels
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
@@ -103,10 +127,14 @@ function readReportFromForm() {
   if (!currentReportId) currentReportId = Date.now().toString();
   let report = getReportById(currentReportId);
   if (!report) { report = createEmptyReport(); report.id = currentReportId; }
-  report.general.trainNumber = qs("#general-train-number").value.trim();
-  report.general.date = qs("#general-date").value;
-  report.general.from = qs("#general-from").value.trim();
-  report.general.to = qs("#general-to").value.trim();
+  const elTrain = qs("#general-train-number");
+  const elDate = qs("#general-date");
+  const elFrom = qs("#general-from");
+  const elTo = qs("#general-to");
+  if (elTrain) report.general.trainNumber = elTrain.value.trim();
+  if (elDate) report.general.date = elDate.value;
+  if (elFrom) report.general.from = elFrom.value.trim();
+  if (elTo) report.general.to = elTo.value.trim();
   return report;
 }
 
@@ -115,10 +143,14 @@ function loadReportIntoForm(report, isReadOnly) {
   currentReportId = report.id;
   readOnlyMode = !!isReadOnly;
 
-  qs("#general-train-number").value = report.general.trainNumber || "";
-  qs("#general-date").value = report.general.date || "";
-  qs("#general-from").value = report.general.from || "";
-  qs("#general-to").value = report.general.to || "";
+  const elTrain = qs("#general-train-number");
+  const elDate = qs("#general-date");
+  const elFrom = qs("#general-from");
+  const elTo = qs("#general-to");
+  if (elTrain) elTrain.value = report.general.trainNumber || "";
+  if (elDate) elDate.value = report.general.date || "";
+  if (elFrom) elFrom.value = report.general.from || "";
+  if (elTo) elTo.value = report.general.to || "";
 
   renderConsist(report);
   renderCrew(report);
@@ -138,6 +170,7 @@ function loadReportIntoForm(report, isReadOnly) {
 
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
+  if (!label) return;
   if (!report) { label.textContent = ""; return; }
   if (report.status === "finished") label.textContent = "Status: Zakończona (tylko do odczytu)";
   else if (report.status === "handed_over") label.textContent = "Status: Przekazana do przejęcia";
@@ -158,15 +191,16 @@ function updateStatusLabel(report) {
 /* ---------- render helpers ---------- */
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
-  locoTbody.innerHTML = ""; wagonTbody.innerHTML = "";
-  report.consist.locos.forEach((l, i) => {
+  if (locoTbody) locoTbody.innerHTML = "";
+  if (wagonTbody) wagonTbody.innerHTML = "";
+  (report.consist.locos || []).forEach((l, i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from)}</td><td>${escapeHtml(l.to)}</td>
       <td class="action-group"><button class="btn small" data-role="edit" data-type="loco" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="loco" data-index="${i}">Usuń</button></td>`;
     locoTbody.appendChild(tr);
   });
-  report.consist.wagons.forEach((w, i) => {
+  (report.consist.wagons || []).forEach((w, i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(w.mark)}</td><td>${escapeHtml(w.from)}</td><td>${escapeHtml(w.to)}</td>
       <td class="action-group"><button class="btn small" data-role="edit" data-type="wagon" data-index="${i}">Edytuj</button>
@@ -176,8 +210,9 @@ function renderConsist(report) {
 }
 
 function renderCrew(report) {
-  const tbody = qs("#crew-table tbody"); tbody.innerHTML = "";
-  report.crew.forEach((c,i) => {
+  const tbody = qs("#crew-table tbody"); if (!tbody) return;
+  tbody.innerHTML = "";
+  (report.crew || []).forEach((c,i) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role)}</td><td>${escapeHtml(c.from)}</td><td>${escapeHtml(c.to)}</td>
       <td class="action-group"><button class="btn small" data-role="edit" data-type="crew" data-index="${i}">Edytuj</button>
@@ -186,12 +221,32 @@ function renderCrew(report) {
   });
 }
 
+/* poprawione obliczanie opóźnień:
+   - zwracamy liczbę minut (może być ujemna)
+   - przy wyborze "odchylenia" bierzemy wartość o największej wartości bezwzględnej
+*/
 function calculateDelayMinutes(planned, actual) {
+  if (!planned && !actual) return null;
+  // jeśli jedno z pól puste, nie możemy policzyć
   if (!planned || !actual) return null;
-  const p = new Date(planned); const a = new Date(actual);
+  // new Date na ISO-like datetime-local traktuje jako lokalny w większości przeglądarek
+  const p = new Date(planned);
+  const a = new Date(actual);
   if (isNaN(p.getTime()) || isNaN(a.getTime())) return null;
   return Math.round((a.getTime() - p.getTime()) / 60000);
 }
+
+function chooseRepresentativeDelay(runEntry) {
+  // zwraca największe opóźnienie (w sensie wartości bezwzględnej) spośród przyjazdu i odjazdu
+  const arrDelay = calculateDelayMinutes(runEntry.plannedArr, runEntry.actualArr);
+  const depDelay = calculateDelayMinutes(runEntry.plannedDep, runEntry.actualDep);
+  if (arrDelay === null && depDelay === null) return null;
+  if (arrDelay === null) return depDelay;
+  if (depDelay === null) return arrDelay;
+  // wybierz ten z większą wartością bezwzględną
+  return Math.abs(arrDelay) >= Math.abs(depDelay) ? arrDelay : depDelay;
+}
+
 function formatDelayCell(delay) {
   if (delay === null) return "";
   if (delay < 0) return `<span class="delay-early">${delay} min</span>`;
@@ -200,10 +255,12 @@ function formatDelayCell(delay) {
 }
 
 function renderRuns(report) {
-  const tbody = qs("#run-table tbody"); tbody.innerHTML = "";
-  report.runs.forEach((r,i) => {
+  const tbody = qs("#run-table tbody"); if (!tbody) return;
+  tbody.innerHTML = "";
+  (report.runs || []).forEach((r,i) => {
     const delayArr = calculateDelayMinutes(r.plannedArr, r.actualArr);
     const delayDep = calculateDelayMinutes(r.plannedDep, r.actualDep);
+    const repDelay = chooseRepresentativeDelay(r);
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(r.station)}</td>
       <td>${escapeHtml(r.plannedArr || "")}</td><td>${escapeHtml(r.actualArr || "")}</td><td>${formatDelayCell(delayArr)}</td>
@@ -211,13 +268,16 @@ function renderRuns(report) {
       <td>${escapeHtml(r.delayReason || "")}</td><td>${escapeHtml(r.orders || "")}</td>
       <td class="action-group"><button class="btn small" data-role="edit" data-type="run" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="run" data-index="${i}">Usuń</button></td>`;
+    // jeśli reprezentatywne opóźnienie >20 min, oznacz wiersz
+    if (repDelay !== null && Math.abs(repDelay) > 20) tr.classList.add("row-critical-delay");
     tbody.appendChild(tr);
   });
 }
 
 function renderDispos(report) {
-  const list = qs("#dispo-list"); list.innerHTML = "";
-  report.dispos.forEach((d,i) => {
+  const list = qs("#dispo-list"); if (!list) return;
+  list.innerHTML = "";
+  (report.dispos || []).forEach((d,i) => {
     const li = document.createElement("li");
     li.innerHTML = `<strong>${escapeHtml(d.source)}:</strong> ${escapeHtml(d.text)}
       <div style="margin-top:8px"><button class="btn small" data-role="edit" data-type="dispo" data-index="${i}">Edytuj</button>
@@ -227,8 +287,9 @@ function renderDispos(report) {
 }
 
 function renderRemarks(report) {
-  const list = qs("#remark-list"); list.innerHTML = "";
-  report.remarks.forEach((r,i) => {
+  const list = qs("#remark-list"); if (!list) return;
+  list.innerHTML = "";
+  (report.remarks || []).forEach((r,i) => {
     const li = document.createElement("li");
     li.innerHTML = `${escapeHtml(r.text)}<div style="margin-top:8px"><button class="btn small" data-role="edit" data-type="remark" data-index="${i}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="remark" data-index="${i}">Usuń</button></div>`;
@@ -247,6 +308,7 @@ let modalSaveHandler = null;
 let lastFocusedElement = null;
 
 function openModal(title, bodyHtml, onSave) {
+  if (!modalBackdrop || !modalBody) return;
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
   modalSaveHandler = onSave;
@@ -256,13 +318,14 @@ function openModal(title, bodyHtml, onSave) {
   setTimeout(() => {
     const focusable = modalBody.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
     if (focusable.length) focusable[0].focus();
-    else modalSaveBtn.focus();
+    else if (modalSaveBtn) modalSaveBtn.focus();
   }, 40);
   document.addEventListener("keydown", trapTabKey);
   document.addEventListener("keydown", escCloseModal);
 }
 
 function closeModal() {
+  if (!modalBackdrop) return;
   modalBackdrop.classList.add("hidden");
   modalBackdrop.setAttribute("aria-hidden","true");
   modalSaveHandler = null;
@@ -271,10 +334,10 @@ function closeModal() {
   document.removeEventListener("keydown", escCloseModal);
 }
 
-modalCancelBtn.addEventListener("click", closeModal);
-modalCloseBtn.addEventListener("click", closeModal);
-modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
-modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeModal);
+if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
+if (modalSaveBtn) modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
+if (modalBackdrop) modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
 
 function escCloseModal(e) { if (e.key === "Escape") closeModal(); }
 function trapTabKey(e) {
@@ -291,7 +354,9 @@ function trapTabKey(e) {
 }
 
 /* ---------- add / edit actions (modale) ---------- */
-qs("#add-loco-btn").addEventListener("click", () => {
+const safeAddListener = (selector, handler) => { const el = qs(selector); if (el) el.addEventListener("click", handler); };
+
+safeAddListener("#add-loco-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj lokomotywę", `
     <label><span>Oznaczenie lokomotywy</span><input id="modal-loco-mark" type="text" /></label>
@@ -307,7 +372,7 @@ qs("#add-loco-btn").addEventListener("click", () => {
   });
 });
 
-qs("#add-wagon-btn").addEventListener("click", () => {
+safeAddListener("#add-wagon-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj wagon", `
     <label><span>Oznaczenie wagonu (max 5 znaków)</span><input id="modal-wagon-mark" maxlength="5" type="text" /></label>
@@ -324,7 +389,7 @@ qs("#add-wagon-btn").addEventListener("click", () => {
   });
 });
 
-qs("#add-crew-btn").addEventListener("click", () => {
+safeAddListener("#add-crew-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj pracownika", `
     <label><span>Imię i nazwisko</span><input id="modal-crew-name" type="text" /></label>
@@ -344,7 +409,7 @@ qs("#add-crew-btn").addEventListener("click", () => {
   });
 });
 
-qs("#add-run-btn").addEventListener("click", () => {
+safeAddListener("#add-run-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj wpis jazdy", `
     <label><span>Nazwa stacji</span><input id="modal-run-station" type="text" /></label>
@@ -368,7 +433,7 @@ qs("#add-run-btn").addEventListener("click", () => {
   });
 });
 
-qs("#add-dispo-btn").addEventListener("click", () => {
+safeAddListener("#add-dispo-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj dyspozycję", `
     <label><span>Kto wydał dyspozycję</span>
@@ -384,7 +449,7 @@ qs("#add-dispo-btn").addEventListener("click", () => {
   });
 });
 
-qs("#add-remark-btn").addEventListener("click", () => {
+safeAddListener("#add-remark-btn", () => {
   const report = readReportFromForm();
   openModal("Dodaj uwagę", `<label><span>Treść uwagi</span><textarea id="modal-remark-text"></textarea></label>`, () => {
     const text = qs("#modal-remark-text").value.trim();
@@ -399,6 +464,8 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
   const role = btn.getAttribute("data-role");
+  const action = btn.getAttribute("data-action");
+  if (action) return; // handled elsewhere (takeover/preview)
   if (!role) return;
   if (readOnlyMode) return;
   const type = btn.getAttribute("data-type");
@@ -522,18 +589,140 @@ document.addEventListener("click", (e) => {
 });
 
 /* ---------- save / pdf / finish / handover ---------- */
-qs("#save-report-btn").addEventListener("click", () => {
+const saveBtn = qs("#save-report-btn");
+if (saveBtn) saveBtn.addEventListener("click", () => {
   const r = readReportFromForm();
   upsertReport(r);
   alert("Raport zapisany lokalnie (demo).");
   refreshLists();
 });
 
-qs("#generate-pdf-btn").addEventListener("click", () => {
-  window.print();
+// DEDYKOWANY WYDRUK PDF: tworzymy nowe okno z czytelnym układem A4 i wywołujemy print()
+const generatePdfBtn = qs("#generate-pdf-btn");
+if (generatePdfBtn) generatePdfBtn.addEventListener("click", () => {
+  const report = getReportById(currentReportId);
+  if (!report) { alert("Brak danych do wydruku."); return; }
+  openPrintWindow(report);
 });
 
-qs("#finish-btn").addEventListener("click", () => {
+function openPrintWindow(report) {
+  const win = window.open("", "_blank", "noopener");
+  if (!win) { alert("Przeglądarka zablokowała otwieranie nowego okna. Zezwól na wyskakujące okna i spróbuj ponownie."); return; }
+
+  const css = `
+    body{font-family:Inter,Arial,Helvetica,sans-serif;color:#0b1220;margin:20px}
+    h1{font-size:20px;margin-bottom:6px}
+    h2{font-size:16px;margin:10px 0}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px}
+    th,td{border:1px solid #ddd;padding:8px;font-size:12px}
+    th{background:#f4f6fb;text-align:left}
+    .section{margin-bottom:18px}
+    .small{font-size:12px;color:#666}
+    @media print{@page{size:A4;margin:12mm}}
+  `;
+
+  // Build HTML content with clear sections and tables
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>Raport pociągu ${escapeHtml(report.general.trainNumber || "")}</title>
+        <style>${css}</style>
+      </head>
+      <body>
+        <h1>Raport z jazdy — ${escapeHtml(report.general.trainNumber || "")}</h1>
+        <div class="small">Data: ${escapeHtml(report.general.date || "")} | Relacja: ${escapeHtml(report.general.from || "")} – ${escapeHtml(report.general.to || "")}</div>
+
+        <div class="section">
+          <h2>Dane ogólne</h2>
+          <table>
+            <tr><th>Numer pociągu</th><td>${escapeHtml(report.general.trainNumber || "")}</td></tr>
+            <tr><th>Dzień kursowania</th><td>${escapeHtml(report.general.date || "")}</td></tr>
+            <tr><th>Stacja od</th><td>${escapeHtml(report.general.from || "")}</td></tr>
+            <tr><th>Stacja do</th><td>${escapeHtml(report.general.to || "")}</td></tr>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Skład pociągu</h2>
+          <table>
+            <thead><tr><th>Typ</th><th>Oznaczenie</th><th>Od</th><th>Do</th></tr></thead>
+            <tbody>
+              ${report.consist.locos.map(l => `<tr><td>Lok</td><td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from)}</td><td>${escapeHtml(l.to)}</td></tr>`).join("")}
+              ${report.consist.wagons.map(w => `<tr><td>Wagon</td><td>${escapeHtml(w.mark)}</td><td>${escapeHtml(w.from)}</td><td>${escapeHtml(w.to)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Drużyna pociągowa</h2>
+          <table>
+            <thead><tr><th>Imię i nazwisko</th><th>Funkcja</th><th>Od</th><th>Do</th></tr></thead>
+            <tbody>
+              ${report.crew.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role)}</td><td>${escapeHtml(c.from)}</td><td>${escapeHtml(c.to)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Dane o jeździe pociągu</h2>
+          <table>
+            <thead><tr><th>Stacja</th><th>Plan przyj.</th><th>Rzecz. przyj.</th><th>Odch. (min)</th><th>Plan odj.</th><th>Rzecz. odj.</th><th>Odch. (min)</th><th>Powód</th><th>Rozkazy</th></tr></thead>
+            <tbody>
+              ${report.runs.map(r => {
+                const arrDelay = calculateDelayMinutes(r.plannedArr, r.actualArr);
+                const depDelay = calculateDelayMinutes(r.plannedDep, r.actualDep);
+                return `<tr>
+                  <td>${escapeHtml(r.station)}</td>
+                  <td>${escapeHtml(r.plannedArr || "")}</td>
+                  <td>${escapeHtml(r.actualArr || "")}</td>
+                  <td>${arrDelay === null ? "" : (arrDelay>0?("+"+arrDelay):arrDelay)}</td>
+                  <td>${escapeHtml(r.plannedDep || "")}</td>
+                  <td>${escapeHtml(r.actualDep || "")}</td>
+                  <td>${depDelay === null ? "" : (depDelay>0?("+"+depDelay):depDelay)}</td>
+                  <td>${escapeHtml(r.delayReason || "")}</td>
+                  <td>${escapeHtml(r.orders || "")}</td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Dyspozycje</h2>
+          <table>
+            <thead><tr><th>Źródło</th><th>Treść</th></tr></thead>
+            <tbody>
+              ${report.dispos.map(d => `<tr><td>${escapeHtml(d.source)}</td><td>${escapeHtml(d.text)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Uwagi kierownika</h2>
+          <table>
+            <tbody>
+              ${report.remarks.map(r => `<tr><td>${escapeHtml(r.text)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <script>
+          setTimeout(() => { window.print(); }, 200);
+        </script>
+      </body>
+    </html>
+  `;
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+/* finish / handover */
+const finishBtn = qs("#finish-btn");
+if (finishBtn) finishBtn.addEventListener("click", () => {
   const report = readReportFromForm();
   openConfirm("Zamknięcie obsługi spowoduje ostateczne zapisanie danych, których nie będzie można poprawić. Czy chcesz zamknąć?", () => {
     report.status = "finished";
@@ -543,7 +732,8 @@ qs("#finish-btn").addEventListener("click", () => {
   });
 });
 
-qs("#handover-btn").addEventListener("click", () => {
+const handoverBtn = qs("#handover-btn");
+if (handoverBtn) handoverBtn.addEventListener("click", () => {
   const report = readReportFromForm();
   if (!report.general.trainNumber || !report.general.date) {
     alert("Podaj numer pociągu i dzień kursowania przed przekazaniem.");
@@ -561,7 +751,7 @@ function refreshLists() {
   const reports = loadReports();
 
   // takeover
-  const takeoverTbody = qs("#takeover-table tbody"); takeoverTbody.innerHTML = "";
+  const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
   reports.filter(r => r.status === "handed_over").forEach(r => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(r.general.trainNumber)}</td><td>${escapeHtml(r.general.from)} – ${escapeHtml(r.general.to)}</td><td>${escapeHtml(r.general.date)}</td>
@@ -570,7 +760,7 @@ function refreshLists() {
   });
 
   // check (today and yesterday)
-  const checkTbody = qs("#check-table tbody"); checkTbody.innerHTML = "";
+  const checkTbody = qs("#check-table tbody"); if (checkTbody) checkTbody.innerHTML = "";
   const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
   const dateToStr = d => d.toISOString().slice(0,10);
   reports.forEach(r => {
@@ -584,20 +774,23 @@ function refreshLists() {
   });
 
   // dyspo
-  const dyspoTbody = qs("#dyspo-table tbody"); dyspoTbody.innerHTML = "";
+  const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
   reports.filter(r => r.status !== "finished").forEach(r => {
-    const lastRun = r.runs[r.runs.length-1];
+    const lastRun = (r.runs && r.runs.length) ? r.runs[r.runs.length-1] : null;
     const station = lastRun ? lastRun.station : "-";
-    let delay = 0;
+    let delay = null;
     if (lastRun) {
       const delayArr = calculateDelayMinutes(lastRun.plannedArr, lastRun.actualArr);
       const delayDep = calculateDelayMinutes(lastRun.plannedDep, lastRun.actualDep);
-      delay = (delayArr || 0);
-      if (delayDep !== null && Math.abs(delayDep) > Math.abs(delay)) delay = delayDep;
+      // wybierz reprezentatywne opóźnienie (największe bezwzględne)
+      if (delayArr === null && delayDep === null) delay = null;
+      else if (delayArr === null) delay = delayDep;
+      else if (delayDep === null) delay = delayArr;
+      else delay = Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep;
     }
     const tr = document.createElement("tr");
-    if (delay > 20) tr.classList.add("row-critical-delay");
-    tr.innerHTML = `<td>${escapeHtml(r.general.trainNumber)}</td><td>${escapeHtml(r.general.from)} – ${escapeHtml(r.general.to)}</td><td>${escapeHtml(station)}</td><td>${escapeHtml(String(delay))}</td>`;
+    if (delay !== null && Math.abs(delay) > 20) tr.classList.add("row-critical-delay");
+    tr.innerHTML = `<td>${escapeHtml(r.general.trainNumber)}</td><td>${escapeHtml(r.general.from)} – ${escapeHtml(r.general.to)}</td><td>${escapeHtml(station)}</td><td>${delay === null ? "" : (delay>0?("+"+delay):delay)}</td>`;
     dyspoTbody.appendChild(tr);
   });
 }
@@ -626,9 +819,9 @@ document.addEventListener("click", (e) => {
 });
 
 /* manual refresh buttons */
-qs("#refresh-takeover").addEventListener("click", refreshLists);
-qs("#refresh-check").addEventListener("click", refreshLists);
-qs("#refresh-dyspo").addEventListener("click", refreshLists);
+const rTake = qs("#refresh-takeover"); if (rTake) rTake.addEventListener("click", refreshLists);
+const rCheck = qs("#refresh-check"); if (rCheck) rCheck.addEventListener("click", refreshLists);
+const rDyspo = qs("#refresh-dyspo"); if (rDyspo) rDyspo.addEventListener("click", refreshLists);
 
 /* auto-refresh dyspo when visible every 3 minutes */
 setInterval(() => {
@@ -637,7 +830,8 @@ setInterval(() => {
 }, 3 * 60 * 1000);
 
 /* new report */
-qs("#new-report-btn").addEventListener("click", () => {
+const newReportBtn = qs("#new-report-btn");
+if (newReportBtn) newReportBtn.addEventListener("click", () => {
   const r = createEmptyReport();
   upsertReport(r);
   loadReportIntoForm(r, false);
@@ -662,20 +856,22 @@ const confirmOkBtn = qs("#confirm-ok-btn");
 const confirmCancelBtn = qs("#confirm-cancel-btn");
 let confirmHandler = null;
 function openConfirm(message, onOk) {
+  if (!confirmBackdrop) return;
   confirmMessage.textContent = message;
   confirmHandler = onOk;
   confirmBackdrop.classList.remove("hidden");
   confirmBackdrop.setAttribute("aria-hidden","false");
-  confirmCancelBtn.focus();
+  confirmCancelBtn && confirmCancelBtn.focus();
 }
 function closeConfirm() {
+  if (!confirmBackdrop) return;
   confirmBackdrop.classList.add("hidden");
   confirmBackdrop.setAttribute("aria-hidden","true");
   confirmHandler = null;
 }
-confirmCancelBtn.addEventListener("click", closeConfirm);
-confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
+if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", closeConfirm);
+if (confirmOkBtn) confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
 /* ---------- utilities ---------- */
-function escapeHtml(s){ if (!s && s!==0) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
