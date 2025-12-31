@@ -1,0 +1,290 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: #f5f6fa;
+  color: #222;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px;
+}
+
+.screen {
+  display: none;
+}
+
+.screen.active {
+  display: block;
+}
+
+.card {
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+h1, h2, h3, h4 {
+  margin-top: 0;
+}
+
+.subtitle {
+  margin-bottom: 16px;
+  color: #555;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+label span {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+input, select, textarea {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.btn {
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  background-color: #ddd;
+  color: #222;
+  transition: background-color 0.15s, transform 0.05s;
+}
+
+.btn.primary {
+  background-color: #005bbb;
+  color: #fff;
+}
+
+.btn.secondary {
+  background-color: #f0f0f0;
+}
+
+.btn.warning {
+  background-color: #d9534f;
+  color: #fff;
+}
+
+.btn.link {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn.small {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.btn.menu {
+  width: 100%;
+  margin-bottom: 6px;
+  background-color: #005bbb;
+  color: #fff;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.grid-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.external-links .links-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Top bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* Tabele */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th, .table td {
+  border: 1px solid #ddd;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.table th {
+  background-color: #f0f2f6;
+}
+
+.table tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+/* Listy */
+.list {
+  list-style: none;
+  padding-left: 0;
+  margin: 8px 0 0;
+}
+
+.list li {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+/* Layout */
+.content {
+  margin-bottom: 70px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 12px;
+}
+
+/* Stopka przyklejona do dołu ekranu */
+.sticky-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.status-label {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Hinty / tekst pomocniczy */
+.hint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 6px;
+}
+
+/* Ekran logowania centrowany */
+#login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#login-screen .card {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* Modale */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal-backdrop.hidden {
+  display: none;
+}
+
+.modal {
+  background-color: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Kolory odchyleń */
+.delay-early {
+  color: green;
+  font-weight: 600;
+}
+
+.delay-late {
+  color: red;
+  font-weight: 600;
+}
+
+.delay-on-time {
+  color: #000;
+}
+
+/* Miganie czerwonych wierszy (opóźnienie > 20 min) */
+@keyframes redBlink {
+  0% { background-color: #ffe5e5; }
+  50% { background-color: #ffb3b3; }
+  100% { background-color: #ffe5e5; }
+}
+
+.row-critical-delay {
+  animation: redBlink 1.5s infinite;
+}
+
+/* Responsywność */
+@media (max-width: 600px) {
+  .top-bar h2 {
+    font-size: 18px;
+  }
+  .table {
+    font-size: 12px;
+  }
+}
