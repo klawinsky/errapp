@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>eRegioJet — Logowanie (Demo)</title>
+  <title>eRegioJet — Logowanie</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -18,25 +18,19 @@
         </div>
       </div>
 
-      <h1>Logowanie</h1>
-      <p class="muted">Zaloguj się lub użyj trybu DEMO. Wersja demo nie łączy się z serwerem.</p>
+      <h1>Logowanie / Rejestracja</h1>
+      <p class="muted">Zaloguj się kontem Supabase lub użyj trybu DEMO.</p>
 
-      <label class="field">
-        <span>Email</span>
-        <input id="login-email" type="email" placeholder="twoj.mail@firma.pl" />
-      </label>
-
-      <label class="field">
-        <span>Hasło</span>
-        <input id="login-password" type="password" placeholder="Hasło" />
-      </label>
+      <label class="field"><span>Email</span><input id="login-email" type="email" placeholder="twoj.mail@firma.pl" /></label>
+      <label class="field"><span>Hasło</span><input id="login-password" type="password" placeholder="Hasło" /></label>
 
       <div class="login-actions">
-        <button id="login-btn" class="btn primary">Zaloguj (Supabase)</button>
+        <button id="login-btn" class="btn primary">Zaloguj</button>
+        <button id="register-btn" class="btn">Zarejestruj</button>
         <button id="login-demo-btn" class="btn ghost">Wejdź (DEMO)</button>
       </div>
 
-      <p class="hint">W demo: kliknij Wejdź (DEMO) lub wprowadź dane i kliknij Zaloguj (jeśli skonfigurowano Supabase Auth).</p>
+      <p class="hint">Po rejestracji otrzymasz e‑mail weryfikacyjny (jeśli w Supabase włączone).</p>
     </div>
 
     <footer class="login-footer">
@@ -44,35 +38,47 @@
     </footer>
   </main>
 
-  <!-- Supabase SDK + prosta inicjalizacja anon key -->
+  <!-- Supabase SDK + inicjalizacja -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
   <script>
-    // Zastąp wartości poniżej swoimi danymi z panelu Supabase
+    // ZASTĄP wartości swoimi z panelu Supabase
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
     window.supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   </script>
 
   <script>
-    // Demo login: zapisujemy flagę w sessionStorage i przekierowujemy do app.html
+    // Demo login
     document.getElementById('login-demo-btn').addEventListener('click', () => {
       const email = document.getElementById('login-email').value.trim() || 'demo@eregiojet.local';
       sessionStorage.setItem('eRJ_user', email);
       window.location.href = 'app.html';
     });
 
-    // Supabase email/password login (jeśli skonfigurowano Auth)
+    // Rejestracja
+    document.getElementById('register-btn').addEventListener('click', async () => {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      if (!email || !password) { alert('Podaj email i hasło.'); return; }
+      const { data, error } = await window.supabase.auth.signUp({ email, password });
+      if (error) { alert('Błąd rejestracji: ' + error.message); return; }
+      alert('Sprawdź skrzynkę e‑mail i potwierdź konto (jeśli włączone). Po potwierdzeniu zaloguj się.');
+    });
+
+    // Logowanie
     document.getElementById('login-btn').addEventListener('click', async () => {
       const email = document.getElementById('login-email').value.trim();
-      const pass = document.getElementById('login-password').value;
-      if (!email || !pass) { alert('Podaj email i hasło.'); return; }
-      const { data, error } = await window.supabase.auth.signInWithPassword({ email, password: pass });
+      const password = document.getElementById('login-password').value;
+      if (!email || !password) { alert('Podaj email i hasło.'); return; }
+      const { data, error } = await window.supabase.auth.signInWithPassword({ email, password });
       if (error) { alert('Błąd logowania: ' + error.message); return; }
-      sessionStorage.setItem('eRJ_user', data.user.id);
+      // jeśli login udany, zapisz uid i przekieruj
+      const uid = data.user?.id || email;
+      sessionStorage.setItem('eRJ_user', uid);
       window.location.href = 'app.html';
     });
 
-    // Jeśli już zalogowany (sessionStorage), przekieruj
+    // Jeśli już zalogowany w sessionStorage, przejdź do aplikacji
     if (sessionStorage.getItem('eRJ_user')) {
       setTimeout(() => { window.location.href = 'app.html'; }, 150);
     }
