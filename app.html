@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>eRegioJet — Aplikacja (Demo)</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <title>eRegioJet — Aplikacja</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -209,6 +208,30 @@
 
   </div>
 
+  <!-- Supabase SDK (UMD) i inicjalizacja -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script>
+    // Podmień poniższy anon key na swój z panelu Supabase
+    const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
+    const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_ANON_KEY';
+
+    // Inicjalizacja klienta Supabase (UMD exposes window.supabase or createClient)
+    try {
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else if (window.supabaseJs && typeof window.supabaseJs.createClient === 'function') {
+        window.supabase = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else if (typeof createClient === 'function') {
+        window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else {
+        console.error('Supabase SDK nie został poprawnie załadowany.');
+      }
+    } catch (e) {
+      console.error('Błąd inicjalizacji Supabase:', e);
+    }
+  </script>
+
+  <!-- główny skrypt aplikacji -->
   <script src="app.js"></script>
 </body>
 </html>
