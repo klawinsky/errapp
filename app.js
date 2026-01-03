@@ -1,104 +1,35 @@
-/* app.js — poprawiony, kompletny plik do podmiany
-   - używa `sb` jako bezpiecznej referencji do klienta Supabase (inicjalizowanego w app.html)
-   - wszystkie selektory są zabezpieczone przed null, inicjalizacja UI odbywa się po DOMContentLoaded
-   - usunięte odwołania do przycisków demo i magic link
+/* app.js — kompletny, bezpieczny i responsywny skrypt aplikacji
+   - wymaga: window.supabase zainicjalizowanego w app.html
+   - wszystkie selektory są sprawdzane przed użyciem
+   - skrypt ładowany z defer, inicjalizacja po DOMContentLoaded
 */
-// --- START: waitForDomAndSelectors (bezpieczny poller) ---
-const REQUIRED_SELECTORS = [
-  '#sidebar-toggle','#sidebar','#user-email-display','#logout-btn',
-  '.nav-btn','[data-open]','#new-report-btn',
-  '#add-loco-btn','#add-wagon-btn','#add-crew-btn','#add-run-btn',
-  '#add-dispo-btn','#add-remark-btn','#save-report-btn','#generate-pdf-btn',
-  '#finish-btn','#handover-btn','#loco-table','#wagon-table','#crew-table',
-  '#run-table','#dispo-list','#remark-list','#takeover-table','#check-table','#dyspo-table',
-  '#modal-backdrop','#modal-title','#modal-body','#modal-save-btn','#modal-cancel-btn','#modal-close',
-  '#confirm-backdrop','#confirm-message','#confirm-ok-btn','#confirm-cancel-btn','.bottom-nav'
-];
 
-function waitForDomAndSelectors(timeoutMs = 8000, intervalMs = 120) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    function check() {
-      // DOM ready?
-      if (document.readyState === 'loading') {
-        if (Date.now() - start > timeoutMs) return reject(new Error('DOMContentLoaded timeout'));
-        return setTimeout(check, intervalMs);
-      }
-      // check selectors
-      const missing = REQUIRED_SELECTORS.filter(s => {
-        try { return document.querySelector(s) === null; } catch(e) { return true; }
-      });
-      if (missing.length === 0) return resolve(true);
-      if (Date.now() - start > timeoutMs) return reject(new Error('Missing selectors: ' + JSON.stringify(missing)));
-      setTimeout(check, intervalMs);
-    }
-    check();
-  });
-}
+console.log('app.js loaded');
 
-// Użycie: opóźnij initApp do momentu, gdy elementy będą dostępne
-const _origInit = window.initApp;
-window.initApp = async function(...args) {
-  try {
-    await waitForDomAndSelectors();
-  } catch (err) {
-    console.error('waitForDomAndSelectors error:', err.message);
-    // wypisz brakujące selektory dla debugowania
-    const missing = REQUIRED_SELECTORS.filter(s => {
-      try { return document.querySelector(s) === null; } catch(e) { return true; }
-    });
-    console.warn('Brakujące selektory po timeout:', missing);
-    // nadal próbujemy uruchomić initApp, ale bezpiecznie
-  }
-  if (typeof _origInit === 'function') return _origInit.apply(this, args);
-  return;
-};
-// --- END: waitForDomAndSelectors ---
-
-let currentReportId = null;
-let readOnlyMode = false;
-
-// Bezpieczna referencja do klienta Supabase (nie redeklarujemy globalnego identyfikatora)
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
 
-/* ---------- Helpers ---------- */
 const qs = (s, r = document) => (r || document).querySelector(s);
 const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 
+let currentReportId = null;
+let readOnlyMode = false;
+
 /* ---------- Auth helpers ---------- */
 async function getCurrentUid() {
   const s = sessionStorage.getItem('eRJ_user');
   if (s) return s;
-  try {
-    if (!sb) return null;
-    const { data } = await sb.auth.getUser();
-    return data?.user?.id || null;
-  } catch (e) {
-    return null;
-  }
+  try { if (!sb) return null; const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
 }
 
-/* Map DB row -> UI report object */
+/* ---------- DB mapping ---------- */
 function mapDbReportToUi(r) {
   if (!r) return null;
   return {
-    id: r.id,
-    status: r.status,
-    created_by: r.created_by,
-    created_at: r.created_at,
-    general: {
-      trainNumber: r.train_number || '',
-      date: r.date || '',
-      from: r.from_station || '',
-      to: r.to_station || ''
-    },
-    consist: r.consist || [],
-    crew: r.crew || [],
-    runs: r.runs || [],
-    dispos: r.dispos || [],
-    remarks: r.remarks || []
+    id: r.id, status: r.status, created_by: r.created_by, created_at: r.created_at,
+    general: { trainNumber: r.train_number || '', date: r.date || '', from: r.from_station || '', to: r.to_station || '' },
+    consist: r.consist || [], crew: r.crew || [], runs: r.runs || [], dispos: r.dispos || [], remarks: r.remarks || []
   };
 }
 
@@ -106,42 +37,24 @@ function mapDbReportToUi(r) {
 async function loadReports() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return [];
-  const { data, error } = await sb
-    .from('reports')
-    .select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)')
-    .eq('created_by', uid)
-    .order('created_at', { ascending: true });
+  const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('created_by', uid).order('created_at', { ascending: true });
   if (error) { console.error('loadReports error', error); return []; }
   return (data || []).map(mapDbReportToUi);
 }
-
 async function getReportById(id) {
   if (!id || !sb) return null;
-  const { data, error } = await sb
-    .from('reports')
-    .select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)')
-    .eq('id', id)
-    .single();
+  const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('id', id).single();
   if (error) { console.error('getReportById error', error); return null; }
   return mapDbReportToUi(data);
 }
-
 async function createEmptyReport() {
   const uid = await getCurrentUid();
   if (!sb) { console.error('createEmptyReport: sb not initialized'); return null; }
-  const payload = {
-    status: 'in_progress',
-    train_number: '',
-    date: null,
-    from_station: '',
-    to_station: '',
-    created_by: uid
-  };
+  const payload = { status: 'in_progress', train_number: '', date: null, from_station: '', to_station: '', created_by: uid };
   const { data, error } = await sb.from('reports').insert([payload]).select().single();
   if (error) { console.error('createEmptyReport error', error); return null; }
   return mapDbReportToUi(data);
 }
-
 async function updateReportFields(id, fields) {
   if (!id || !sb) { console.error('updateReportFields: missing id or sb'); return null; }
   const { data, error } = await sb.from('reports').update(fields).eq('id', id).select().single();
@@ -149,60 +62,37 @@ async function updateReportFields(id, fields) {
   return mapDbReportToUi(data);
 }
 
-/* related records: add */
+/* related records */
 async function addConsist(reportId, type, mark, fromStation, toStation) {
-  if (!reportId || !sb) { console.error('addConsist: missing reportId or sb'); return null; }
-  const { data, error } = await sb.from('consist').insert([{
-    report_id: reportId,
-    type,
-    mark,
-    from_station: fromStation || '',
-    to_station: toStation || ''
-  }]).select();
+  if (!reportId || !sb) return null;
+  const { data, error } = await sb.from('consist').insert([{ report_id: reportId, type, mark, from_station: fromStation || '', to_station: toStation || '' }]).select();
   if (error) console.error('addConsist error', error);
   return data;
 }
 async function addCrew(reportId, name, role, fromStation, toStation) {
-  if (!reportId || !sb) { console.error('addCrew: missing reportId or sb'); return null; }
-  const { data, error } = await sb.from('crew').insert([{
-    report_id: reportId,
-    name,
-    role,
-    from_station: fromStation || '',
-    to_station: toStation || ''
-  }]).select();
+  if (!reportId || !sb) return null;
+  const { data, error } = await sb.from('crew').insert([{ report_id: reportId, name, role, from_station: fromStation || '', to_station: toStation || '' }]).select();
   if (error) console.error('addCrew error', error);
   return data;
 }
 async function addRun(reportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders) {
-  if (!reportId || !sb) { console.error('addRun: missing reportId or sb'); return null; }
-  const { data, error } = await sb.from('runs').insert([{
-    report_id: reportId,
-    station,
-    planned_arr: plannedArr || null,
-    actual_arr: actualArr || null,
-    planned_dep: plannedDep || null,
-    actual_dep: actualDep || null,
-    delay_reason: delayReason || '',
-    orders: orders || ''
-  }]).select();
+  if (!reportId || !sb) return null;
+  const { data, error } = await sb.from('runs').insert([{ report_id: reportId, station, planned_arr: plannedArr || null, actual_arr: actualArr || null, planned_dep: plannedDep || null, actual_dep: actualDep || null, delay_reason: delayReason || '', orders: orders || '' }]).select();
   if (error) console.error('addRun error', error);
   return data;
 }
 async function addDispo(reportId, source, text) {
-  if (!reportId || !sb) { console.error('addDispo: missing reportId or sb'); return null; }
+  if (!reportId || !sb) return null;
   const { data, error } = await sb.from('dispos').insert([{ report_id: reportId, source, text }]).select();
   if (error) console.error('addDispo error', error);
   return data;
 }
 async function addRemark(reportId, text) {
-  if (!reportId || !sb) { console.error('addRemark: missing reportId or sb'); return null; }
+  if (!reportId || !sb) return null;
   const { data, error } = await sb.from('remarks').insert([{ report_id: reportId, text }]).select();
   if (error) console.error('addRemark error', error);
   return data;
 }
-
-/* delete / update helpers */
 async function deleteRow(table, id) {
   if (!table || !id || !sb) return null;
   const { data, error } = await sb.from(table).delete().eq('id', id);
@@ -346,18 +236,16 @@ function trapTabKey(e) {
   if (e.key !== "Tab") return;
   const focusable = modalBackdrop.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
   if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
+  const first = focusable[0], last = focusable[focusable.length - 1];
   if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* ---------- UI action bindings (attached after DOM ready) ---------- */
+/* ---------- UI bindings ---------- */
 function bindUiActions() {
-  // safe helper
-  const safeAddListener = (selector, handler) => { const el = qs(selector); if (el) el.addEventListener("click", handler); };
+  const safe = (sel, cb) => { const el = qs(sel); if (el) el.addEventListener('click', cb); };
 
-  safeAddListener("#add-loco-btn", () => {
+  safe('#add-loco-btn', () => {
     openModal("Dodaj lokomotywę", `
       <label><span>Oznaczenie lokomotywy</span><input id="modal-loco-mark" type="text" /></label>
       <label><span>Stacja od</span><input id="modal-loco-from" type="text" /></label>
@@ -374,7 +262,7 @@ function bindUiActions() {
     });
   });
 
-  safeAddListener("#add-wagon-btn", () => {
+  safe('#add-wagon-btn', () => {
     openModal("Dodaj wagon", `
       <label><span>Oznaczenie wagonu (max 5 znaków)</span><input id="modal-wagon-mark" maxlength="5" type="text" /></label>
       <label><span>Stacja od</span><input id="modal-wagon-from" type="text" /></label>
@@ -392,7 +280,7 @@ function bindUiActions() {
     });
   });
 
-  safeAddListener("#add-crew-btn", () => {
+  safe('#add-crew-btn', () => {
     openModal("Dodaj pracownika", `
       <label><span>Imię i nazwisko</span><input id="modal-crew-name" type="text" /></label>
       <label><span>Funkcja (M, KP, ZS, R)</span>
@@ -413,7 +301,7 @@ function bindUiActions() {
     });
   });
 
-  safeAddListener("#add-run-btn", () => {
+  safe('#add-run-btn', () => {
     openModal("Dodaj wpis jazdy", `
       <label><span>Nazwa stacji</span><input id="modal-run-station" type="text" /></label>
       <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" /></label>
@@ -438,7 +326,7 @@ function bindUiActions() {
     });
   });
 
-  safeAddListener("#add-dispo-btn", () => {
+  safe('#add-dispo-btn', () => {
     openModal("Dodaj dyspozycję", `
       <label><span>Kto wydał dyspozycję</span>
         <select id="modal-dispo-source"><option value="">-- wybierz --</option><option value="Dyspozytura">Dyspozytura</option><option value="PLK">PLK</option><option value="Inny">Inny</option></select>
@@ -455,7 +343,7 @@ function bindUiActions() {
     });
   });
 
-  safeAddListener("#add-remark-btn", () => {
+  safe('#add-remark-btn', () => {
     openModal("Dodaj uwagę", `<label><span>Treść uwagi</span><textarea id="modal-remark-text"></textarea></label>`, async () => {
       const text = qs("#modal-remark-text").value.trim();
       if (!text) { alert("Wpisz treść uwagi."); return; }
@@ -466,7 +354,6 @@ function bindUiActions() {
     });
   });
 
-  // Delegation for edit/delete and action buttons
   document.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
@@ -523,7 +410,6 @@ function bindUiActions() {
     }
   });
 
-  // Save / PDF / Finish / Handover
   const saveBtn = qs("#save-report-btn");
   if (saveBtn) saveBtn.addEventListener("click", async () => {
     const r = await readReportFromForm();
@@ -532,12 +418,7 @@ function bindUiActions() {
       if (!created) { alert('Błąd tworzenia raportu'); return; }
       currentReportId = created.id;
     }
-    await updateReportFields(currentReportId, {
-      train_number: r.general.trainNumber,
-      date: r.general.date || null,
-      from_station: r.general.from,
-      to_station: r.general.to
-    });
+    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
     alert("Raport zapisany.");
     const report = await getReportById(currentReportId);
     loadReportIntoForm(report, false);
@@ -568,7 +449,6 @@ function bindUiActions() {
     await handoverReport(currentReportId);
   });
 
-  // New report
   const newReportBtn = qs("#new-report-btn");
   if (newReportBtn) newReportBtn.addEventListener("click", async () => {
     const r = await createEmptyReport();
@@ -580,7 +460,6 @@ function bindUiActions() {
     refreshLists();
   });
 
-  // Bottom nav (mobile)
   const bottomNav = qs('.bottom-nav');
   if (bottomNav) {
     bottomNav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
@@ -601,18 +480,12 @@ async function handoverReport(reportId) {
   loadReportIntoForm(report, true);
   refreshLists();
 }
-
 async function takeOverReport(reportId) {
   if (!reportId || !sb) return;
   const { data: userData } = await sb.auth.getUser();
   const uid = userData?.user?.id;
   if (!uid) { alert('Musisz być zalogowany, aby przejąć raport'); return; }
-  const { data, error } = await sb
-    .from('reports')
-    .update({ created_by: uid, status: 'in_progress' })
-    .eq('id', reportId)
-    .select()
-    .single();
+  const { data, error } = await sb.from('reports').update({ created_by: uid, status: 'in_progress' }).eq('id', reportId).select().single();
   if (error) { console.error('takeover error', error); alert('Błąd przy przejmowaniu raportu: ' + (error.message || JSON.stringify(error))); return; }
   const report = await getReportById(reportId);
   loadReportIntoForm(report, false);
@@ -624,7 +497,6 @@ async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
 
-  // takeover
   const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
   if (tErr) console.error('refreshLists takeover error', tErr);
   const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
@@ -635,7 +507,6 @@ async function refreshLists() {
     takeoverTbody.appendChild(tr);
   });
 
-  // check (today/yesterday)
   const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
   const dateToStr = d => d.toISOString().slice(0,10);
   const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('created_at', { ascending: false });
@@ -651,7 +522,6 @@ async function refreshLists() {
     }
   });
 
-  // dyspo
   const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
   if (arErr) console.error('refreshLists activeReports error', arErr);
   const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
@@ -682,7 +552,6 @@ async function readReportFromForm() {
   const to = qs("#general-to")?.value.trim() || "";
   return { general: { trainNumber: train, date, from, to } };
 }
-
 function loadReportIntoForm(report, isReadOnly) {
   if (!report) return;
   currentReportId = report.id;
@@ -691,22 +560,14 @@ function loadReportIntoForm(report, isReadOnly) {
   const elDate = qs("#general-date"); if (elDate) elDate.value = report.general.date || "";
   const elFrom = qs("#general-from"); if (elFrom) elFrom.value = report.general.from || "";
   const elTo = qs("#general-to"); if (elTo) elTo.value = report.general.to || "";
-  renderConsist(report);
-  renderCrew(report);
-  renderRuns(report);
-  renderDispos(report);
-  renderRemarks(report);
+  renderConsist(report); renderCrew(report); renderRuns(report); renderDispos(report); renderRemarks(report);
   updateStatusLabel(report);
   const disabled = readOnlyMode || report.status === "finished";
-  ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => {
-    const el = qs(id); if (el) el.disabled = disabled;
-  });
-  ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => {
-    const el = qs(id); if (el) el.disabled = disabled;
-  });
+  ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
+  ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
 }
 
-/* autosave general fields (debounced) */
+/* autosave debounce */
 let autosaveTimer;
 function bindAutosave() {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(sel => {
@@ -721,12 +582,7 @@ function bindAutosave() {
           currentReportId = created.id;
         }
         const r = await readReportFromForm();
-        await updateReportFields(currentReportId, {
-          train_number: r.general.trainNumber,
-          date: r.general.date || null,
-          from_station: r.general.from,
-          to_station: r.general.to
-        });
+        await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
         const report = await getReportById(currentReportId);
         loadReportIntoForm(report, false);
         refreshLists();
@@ -735,7 +591,7 @@ function bindAutosave() {
   });
 }
 
-/* ---------- Confirm modal ---------- */
+/* confirm modal */
 const confirmBackdrop = qs("#confirm-backdrop");
 const confirmMessage = qs("#confirm-message");
 const confirmOkBtn = qs("#confirm-ok-btn");
@@ -758,112 +614,50 @@ function closeConfirm() {
 if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", closeConfirm);
 if (confirmOkBtn) confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
-/* ---------- Print window ---------- */
+/* print */
 function openPrintWindow(report) {
   const win = window.open("", "_blank", "noopener");
   if (!win) { alert("Przeglądarka zablokowała otwieranie nowego okna. Zezwól na wyskakujące okna i spróbuj ponownie."); return; }
-  const css = `
-    body{font-family:Inter,Arial,Helvetica,sans-serif;color:#0b1220;margin:20px}
-    h1{font-size:20px;margin-bottom:6px}
-    h2{font-size:16px;margin:10px 0}
-    table{width:100%;border-collapse:collapse;margin-bottom:12px}
-    th,td{border:1px solid #ddd;padding:8px;font-size:12px}
-    th{background:#f4f6fb;text-align:left}
-    .section{margin-bottom:18px}
-    .small{font-size:12px;color:#666}
-    @media print{@page{size:A4;margin:12mm}}
-  `;
-  const html = `
-    <!doctype html><html><head><meta charset="utf-8"/><title>Raport pociągu ${escapeHtml(report.general.trainNumber || '')}</title><style>${css}</style></head><body>
-    <h1>Raport z jazdy — ${escapeHtml(report.general.trainNumber || '')}</h1>
-    <div class="small">Data: ${escapeHtml(report.general.date || '')} | Relacja: ${escapeHtml(report.general.from || '')} – ${escapeHtml(report.general.to || '')}</div>
-    </body></html>`;
+  const css = `body{font-family:Inter,Arial,Helvetica,sans-serif;color:#0b1220;margin:20px}h1{font-size:20px;margin-bottom:6px}`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Raport ${escapeHtml(report.general.trainNumber||'')}</title><style>${css}</style></head><body><h1>Raport — ${escapeHtml(report.general.trainNumber||'')}</h1><div>Data: ${escapeHtml(report.general.date||'')}</div></body></html>`;
   win.document.open(); win.document.write(html); win.document.close();
 }
 
-/* ---------- Initialization after DOM ready ---------- */
+/* init */
 async function initApp() {
-  // Ensure user is set in UI if already logged
   try {
     const { data } = sb ? await sb.auth.getUser() : { data: null };
-    if (data && data.user && data.user.email) {
-      const el = qs('#user-email-display'); if (el) el.textContent = data.user.email;
-      sessionStorage.setItem('eRJ_user', data.user.id);
-    }
-  } catch (e) {
-    console.warn('ensureLoggedIn error', e);
-  }
+    if (data && data.user && data.user.email) { const el = qs('#user-email-display'); if (el) el.textContent = data.user.email; sessionStorage.setItem('eRJ_user', data.user.id); }
+  } catch (e) { console.warn('auth init', e); }
 
-  // Bind navigation and UI actions
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
-  navBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      navBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const panel = btn.getAttribute("data-panel");
-      showPanel(panel);
-      const sidebarEl = qs("#sidebar");
-      if (sidebarEl) sidebarEl.classList.remove("open");
-    });
-  });
+  navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
 
-  Array.from(document.querySelectorAll("[data-open]")).forEach(b => {
-    b.addEventListener("click", () => {
-      const panel = b.getAttribute("data-open");
-      const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
-      if (nav) nav.click(); else showPanel(panel);
-    });
-  });
+  Array.from(document.querySelectorAll("[data-open]")).forEach(b => b.addEventListener("click", () => { const panel = b.getAttribute("data-open"); const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`); if (nav) nav.click(); else showPanel(panel); }));
 
-  // Sidebar toggle
-  const sidebar = qs("#sidebar");
-  const sidebarToggle = qs("#sidebar-toggle");
+  const sidebar = qs("#sidebar"); const sidebarToggle = qs("#sidebar-toggle");
   if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener("click", (e) => {
-      e.stopPropagation();
-      sidebar.classList.toggle("open");
-      sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
-    });
-    document.addEventListener("click", (e) => {
-      if (!sidebar.classList.contains("open")) return;
-      if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
-      sidebar.classList.remove("open");
-      sidebarToggle.setAttribute("aria-expanded", "false");
-    });
+    sidebarToggle.addEventListener("click", (e) => { e.stopPropagation(); sidebar.classList.toggle("open"); sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open")); });
+    document.addEventListener("click", (e) => { if (!sidebar.classList.contains("open")) return; if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return; sidebar.classList.remove("open"); sidebarToggle.setAttribute("aria-expanded", "false"); });
   }
 
-  // Logout
   const logoutBtn = qs("#logout-btn");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", async () => {
-      try { if (sb) await sb.auth.signOut(); } catch(e) {}
-      sessionStorage.removeItem('eRJ_user');
-      window.location.href = 'index.html';
-    });
-  }
+  if (logoutBtn) logoutBtn.addEventListener("click", async () => { try { if (sb) await sb.auth.signOut(); } catch(e){} sessionStorage.removeItem('eRJ_user'); window.location.href = 'index.html'; });
 
-  // Bind UI actions and autosave
   bindUiActions();
   bindAutosave();
 
-  // Initial load
   try {
     const reports = await loadReports();
     if (reports && reports.length) {
       const inProg = reports.find(r => r.status === 'in_progress');
       const toLoad = inProg || reports[0];
-      if (toLoad) {
-        const full = await getReportById(toLoad.id);
-        loadReportIntoForm(full, false);
-      }
+      if (toLoad) { const full = await getReportById(toLoad.id); loadReportIntoForm(full, false); }
     }
     refreshLists();
-  } catch (e) {
-    console.error('initial load error', e);
-  }
+  } catch (e) { console.error('initApp load error', e); }
 }
 
-/* showPanel utility */
 function showPanel(name) {
   qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
@@ -871,13 +665,6 @@ function showPanel(name) {
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
-/* Start after DOM ready */
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    initApp().catch(e => console.error('initApp error', e));
-  });
-} else {
+document.addEventListener('DOMContentLoaded', () => {
   initApp().catch(e => console.error('initApp error', e));
-}
-
-/* end of file */
+});
