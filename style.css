@@ -1,19 +1,7 @@
-/* style.css — mobile-first, responsywne style */
-
-/* Root variables */
 :root{
-  --bg:#f8fafc;
-  --card:#ffffff;
-  --muted:#6b7280;
-  --accent:#0b74de;
-  --danger:#ff6b6b;
-  --gap:12px;
-  --btn-height:48px;
-  --radius:10px;
-  --font-base:16px;
+  --bg:#f8fafc; --card:#ffffff; --muted:#6b7280; --accent:#0b74de; --danger:#ff6b6b;
+  --gap:12px; --btn-height:48px; --radius:10px; --font-base:16px;
 }
-
-/* Base */
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;color:#0b1220;background:var(--bg);font-size:var(--font-base);-webkit-font-smoothing:antialiased}
@@ -49,7 +37,7 @@ body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial
 label{display:block;font-size:13px;color:var(--muted)}
 input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eefc;font-size:15px}
 
-/* Tables -> responsive */
+/* Tables */
 .table{width:100%;border-collapse:collapse}
 .table thead th{background:#f4f6fb;padding:8px;text-align:left}
 .table td, .table th{padding:8px;border-bottom:1px solid #f1f5f9;font-size:14px}
@@ -70,7 +58,7 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
 .bottom-nav{display:none;position:fixed;left:12px;right:12px;bottom:12px;gap:8px;z-index:70}
 .bottom-nav .btn{flex:1;border-radius:12px}
 
-/* Responsive adjustments */
+/* Responsive */
 @media (max-width:900px){
   .layout{flex-direction:column}
   .sidebar{display:none}
@@ -85,7 +73,6 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
   .btn{min-height:48px}
 }
 
-/* Utility */
 .hidden{display:none !important}
 .action-group{display:flex;gap:6px;flex-wrap:wrap}
 .status{font-size:13px;color:var(--muted)}
