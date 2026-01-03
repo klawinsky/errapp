@@ -4,37 +4,73 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>eRegioJet — Logowanie</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+    /* minimalne style, możesz użyć swojego style.css */
+    body{font-family:Arial,Helvetica,sans-serif;background:#f6f8fb;padding:20px}
+    .login-card{max-width:420px;margin:40px auto;padding:18px;background:#fff;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+    label{display:block;margin:8px 0}
+    input{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
+    button{margin-right:8px;padding:8px 12px;border-radius:6px}
+    #login-msg{color:#b00;margin-top:8px}
+  </style>
 </head>
-<body class="login-page">
+<body>
   <main class="login-container">
     <div class="login-card">
       <h1>Logowanie / Rejestracja</h1>
-      <label><span>Email</span><input id="login-email" type="email" /></label>
-      <label><span>Hasło</span><input id="login-password" type="password" /></label>
+      <label>Email <input id="login-email" type="email" /></label>
+      <label>Hasło <input id="login-password" type="password" /></label>
 
-      <div class="login-actions">
+      <div style="margin-top:12px">
         <button id="login-btn">Zaloguj</button>
         <button id="register-btn">Zarejestruj</button>
         <button id="magic-btn">Wyślij magic link</button>
         <button id="login-demo-btn">Wejdź (DEMO)</button>
       </div>
 
-      <p id="login-msg" style="color:#b00"></p>
+      <p id="login-msg"></p>
     </div>
   </main>
 
-  <!-- Supabase SDK i inicjalizacja -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <!-- Poprawny CDN UMD (wersja kompatybilna z window.supabase) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
   <script>
+    // Wklej tutaj swój SUPABASE_URL i SUPABASE_ANON_KEY
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
-    window.supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Bezpieczna inicjalizacja: obsłuży różne globalne nazwy SDK
+    (function initSupabase() {
+      try {
+        // preferowane: window.supabase.createClient (UMD exposes window.supabase)
+        if (window.supabase && typeof window.supabase.createClient === 'function') {
+          window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else if (window.supabaseJs && typeof window.supabaseJs.createClient === 'function') {
+          window.supabase = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else if (typeof createClient === 'function') {
+          // some builds expose createClient globally
+          window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else {
+          console.error('Supabase SDK nie jest dostępne. Sprawdź URL CDN.');
+        }
+      } catch (err) {
+        console.error('Błąd inicjalizacji Supabase:', err);
+      }
+    })();
   </script>
 
-  <!-- Logika rejestracji/logowania -->
   <script>
     const msg = document.getElementById('login-msg');
+
+    // helper do sprawdzenia, czy supabase jest zainicjalizowany
+    function supabaseReady() {
+      if (!window.supabase) {
+        msg.textContent = 'Błąd: klient Supabase nie został zainicjalizowany. Sprawdź anon key i CDN.';
+        return false;
+      }
+      return true;
+    }
 
     document.getElementById('login-demo-btn').addEventListener('click', () => {
       sessionStorage.setItem('eRJ_user', 'demo@eregiojet.local');
@@ -43,34 +79,58 @@
 
     document.getElementById('register-btn').addEventListener('click', async () => {
       msg.textContent = '';
+      if (!supabaseReady()) return;
       const email = document.getElementById('login-email').value.trim();
       const password = document.getElementById('login-password').value;
       if (!email || !password) { msg.textContent = 'Podaj email i hasło'; return; }
-      const res = await window.supabase.auth.signUp({ email, password });
-      if (res.error) msg.textContent = 'Błąd rejestracji: ' + res.error.message;
-      else msg.textContent = 'Zarejestrowano. Sprawdź e‑mail (jeśli włączone).';
+      try {
+        const res = await window.supabase.auth.signUp({ email, password });
+        console.log('signUp result', res);
+        if (res.error) msg.textContent = 'Błąd rejestracji: ' + res.error.message;
+        else msg.textContent = 'Zarejestrowano. Sprawdź e‑mail (jeśli włączone).';
+      } catch (e) {
+        console.error(e);
+        msg.textContent = 'Błąd rejestracji (sprawdź konsolę).';
+      }
     });
 
     document.getElementById('login-btn').addEventListener('click', async () => {
       msg.textContent = '';
+      if (!supabaseReady()) return;
       const email = document.getElementById('login-email').value.trim();
       const password = document.getElementById('login-password').value;
       if (!email || !password) { msg.textContent = 'Podaj email i hasło'; return; }
-      const res = await window.supabase.auth.signInWithPassword({ email, password });
-      if (res.error) { msg.textContent = 'Błąd logowania: ' + res.error.message; return; }
-      const uid = res.data.user?.id || res.data?.user?.id;
-      sessionStorage.setItem('eRJ_user', uid);
-      window.location.href = 'app.html';
+      try {
+        const res = await window.supabase.auth.signInWithPassword({ email, password });
+        console.log('signIn result', res);
+        if (res.error) { msg.textContent = 'Błąd logowania: ' + res.error.message; return; }
+        const uid = res.data?.user?.id || res.user?.id;
+        sessionStorage.setItem('eRJ_user', uid);
+        window.location.href = 'app.html';
+      } catch (e) {
+        console.error(e);
+        msg.textContent = 'Błąd logowania (sprawdź konsolę).';
+      }
     });
 
     document.getElementById('magic-btn').addEventListener('click', async () => {
       msg.textContent = '';
+      if (!supabaseReady()) return;
       const email = document.getElementById('login-email').value.trim();
       if (!email) { msg.textContent = 'Podaj email'; return; }
-      const res = await window.supabase.auth.signInWithOtp({ email });
-      if (res.error) msg.textContent = 'Błąd: ' + res.error.message;
-      else msg.textContent = 'Wysłano magic link na e‑mail.';
+      try {
+        const res = await window.supabase.auth.signInWithOtp({ email });
+        console.log('magic link result', res);
+        if (res.error) msg.textContent = 'Błąd: ' + res.error.message;
+        else msg.textContent = 'Wysłano magic link na e‑mail.';
+      } catch (e) {
+        console.error(e);
+        msg.textContent = 'Błąd wysyłki magic link (sprawdź konsolę).';
+      }
     });
+
+    // szybki sanity check w konsoli
+    console.log('Supabase client:', window.supabase);
   </script>
 </body>
 </html>
