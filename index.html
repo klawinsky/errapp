@@ -2,133 +2,227 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>eRegioJet — Logowanie</title>
-  <style>
-    /* minimalne style, możesz użyć swojego style.css */
-    body{font-family:Arial,Helvetica,sans-serif;background:#f6f8fb;padding:20px}
-    .login-card{max-width:420px;margin:40px auto;padding:18px;background:#fff;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
-    label{display:block;margin:8px 0}
-    input{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
-    button{margin-right:8px;padding:8px 12px;border-radius:6px}
-    #login-msg{color:#b00;margin-top:8px}
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>eRegioJet — Raporty pociągów</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="login-container">
-    <div class="login-card">
-      <h1>Logowanie / Rejestracja</h1>
-      <label>Email <input id="login-email" type="email" /></label>
-      <label>Hasło <input id="login-password" type="password" /></label>
-
-      <div style="margin-top:12px">
-        <button id="login-btn">Zaloguj</button>
-        <button id="register-btn">Zarejestruj</button>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="sidebar-toggle" class="icon-btn" aria-label="Otwórz menu">☰</button>
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
+          <div class="brand-text">
+            <div class="brand-title">eRegioJet</div>
+            <div class="brand-sub">Raporty pociągów</div>
+          </div>
+        </div>
       </div>
 
-      <p id="login-msg"></p>
-    </div>
-  </main>
+      <div class="topbar-right" id="auth-area">
+        <div id="user-inline" class="user-inline">
+          <span id="user-email-display" class="user-email"></span>
+          <button id="logout-btn" class="btn ghost">Wyloguj</button>
+        </div>
+      </div>
+    </header>
 
-  <!-- Poprawny CDN UMD (wersja kompatybilna z window.supabase) -->
+    <div class="layout">
+      <aside id="sidebar" class="sidebar" aria-label="Główne menu">
+        <nav>
+          <ul>
+            <li><button class="nav-btn active" data-panel="menu">Menu</button></li>
+            <li><button class="nav-btn" data-panel="handle-train">Obsłuż pociąg</button></li>
+            <li><button class="nav-btn" data-panel="takeover">Przejmij pociąg</button></li>
+            <li><button class="nav-btn" data-panel="check">Sprawdź pociąg</button></li>
+            <li><button class="nav-btn" data-panel="dyspo">DyspoPanel</button></li>
+          </ul>
+        </nav>
+      </aside>
+
+      <main class="main" id="main">
+        <section id="panel-menu" class="panel">
+          <div class="panel-header">
+            <h2>Menu</h2>
+            <div class="panel-actions">
+              <button id="new-report-btn" class="btn">Nowy raport</button>
+            </div>
+          </div>
+
+          <div class="cards-row">
+            <article class="card quick">
+              <h3>Obsłuż pociąg</h3>
+              <p>Twórz i edytuj raport z jazdy (kierownik pociągu).</p>
+              <div class="card-actions"><button class="btn primary" data-open="handle-train">Przejdź</button></div>
+            </article>
+
+            <article class="card quick">
+              <h3>Przejmij pociąg</h3>
+              <p>Lista pociągów przekazanych do przejęcia.</p>
+              <div class="card-actions"><button class="btn" data-open="takeover">Przejdź</button></div>
+            </article>
+
+            <article class="card quick">
+              <h3>Sprawdź pociąg</h3>
+              <p>Podgląd raportów (tylko odczyt).</p>
+              <div class="card-actions"><button class="btn" data-open="check">Przejdź</button></div>
+            </article>
+
+            <article class="card quick">
+              <h3>DyspoPanel</h3>
+              <p>Widok dyspozytorski — lista pociągów w obsłudze.</p>
+              <div class="card-actions"><button class="btn" data-open="dyspo">Przejdź</button></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="panel-handle-train" class="panel" hidden>
+          <div class="panel-header">
+            <h2>Obsłuż pociąg — Raport z jazdy</h2>
+            <div class="panel-actions">
+              <button id="save-report-btn" class="btn">Zapisz</button>
+              <button id="generate-pdf-btn" class="btn">Generuj PDF</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>A. Dane ogólne</h3>
+            <div class="form-grid">
+              <label><span>Numer pociągu</span><input id="general-train-number" type="text" inputmode="numeric" /></label>
+              <label><span>Dzień kursowania</span><input id="general-date" type="date" /></label>
+              <label><span>Stacja od</span><input id="general-from" type="text" /></label>
+              <label><span>Stacja do</span><input id="general-to" type="text" /></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>B. Skład pociągu</h3>
+            <div class="btn-row">
+              <button class="btn" id="add-loco-btn">Dodaj lok</button>
+              <button class="btn" id="add-wagon-btn">Dodaj wagon</button>
+            </div>
+            <div class="tables-row">
+              <div class="table-card">
+                <h4>Lokomotywy</h4>
+                <table class="table" id="loco-table"><thead><tr><th>Oznaczenie</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead><tbody></tbody></table>
+              </div>
+              <div class="table-card">
+                <h4>Wagony</h4>
+                <table class="table" id="wagon-table"><thead><tr><th>Oznaczenie</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead><tbody></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>C. Drużyna pociągowa</h3>
+            <div class="btn-row"><button class="btn" id="add-crew-btn">Dodaj pracownika</button></div>
+            <table class="table" id="crew-table"><thead><tr><th>Imię i nazwisko</th><th>Funkcja</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead><tbody></tbody></table>
+          </div>
+
+          <div class="card">
+            <h3>D. Dane o jeździe pociągu</h3>
+            <div class="btn-row"><button class="btn" id="add-run-btn">Dodaj wpis</button></div>
+            <table class="table" id="run-table"><thead><tr><th>Stacja</th><th>Plan przyj.</th><th>Rzecz. przyj.</th><th>Odch. przyj.</th><th>Plan odj.</th><th>Rzecz. odj.</th><th>Odch. odj.</th><th>Powód</th><th>Rozkazy</th><th>Akcje</th></tr></thead><tbody></tbody></table>
+          </div>
+
+          <div class="card">
+            <h3>E. Dyspozycje</h3>
+            <div class="btn-row"><button class="btn" id="add-dispo-btn">Dodaj dyspozycję</button></div>
+            <ul id="dispo-list" class="list"></ul>
+          </div>
+
+          <div class="card">
+            <h3>F. Uwagi kierownika pociągu</h3>
+            <div class="btn-row"><button class="btn" id="add-remark-btn">Dodaj uwagę</button></div>
+            <ul id="remark-list" class="list"></ul>
+          </div>
+
+          <div class="card actions-row">
+            <div>
+              <button class="btn warning" id="finish-btn">Zakończ obsługę</button>
+              <button class="btn" id="handover-btn">Przekaż obsługę</button>
+            </div>
+            <div class="status" id="report-status-label"></div>
+          </div>
+        </section>
+
+        <section id="panel-takeover" class="panel" hidden>
+          <div class="panel-header">
+            <h2>Przejmij pociąg</h2>
+            <div class="panel-actions"><button id="refresh-takeover" class="btn">Odśwież</button></div>
+          </div>
+          <div class="card">
+            <p>Lista pociągów przekazanych do przejęcia.</p>
+            <table class="table" id="takeover-table"><thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Akcja</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+
+        <section id="panel-check" class="panel" hidden>
+          <div class="panel-header">
+            <h2>Sprawdź pociąg</h2>
+            <div class="panel-actions"><button id="refresh-check" class="btn">Odśwież</button></div>
+          </div>
+          <div class="card">
+            <p>Lista raportów (dziś i wczoraj) — tylko podgląd.</p>
+            <table class="table" id="check-table"><thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Podgląd</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+
+        <section id="panel-dyspo" class="panel" hidden>
+          <div class="panel-header">
+            <h2>DyspoPanel</h2>
+            <div class="panel-actions"><button id="refresh-dyspo" class="btn">Odśwież</button></div>
+          </div>
+          <div class="card">
+            <p>Lista pociągów w obsłudze. Widok odświeża się co 3 minuty.</p>
+            <table class="table" id="dyspo-table"><thead><tr><th>Numer</th><th>Relacja</th><th>Ostatnia stacja</th><th>Odchylenie (min)</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <header class="modal-header"><h3 id="modal-title"></h3><button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button></header>
+        <div id="modal-body" class="modal-body"></div>
+        <footer class="modal-footer"><button id="modal-cancel-btn" class="btn ghost">Anuluj</button><button id="modal-save-btn" class="btn primary">Zapisz</button></footer>
+      </div>
+    </div>
+
+    <div id="confirm-backdrop" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true"><header class="modal-header"><h3>Potwierdzenie</h3></header><div id="confirm-message" class="modal-body"></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn ghost">Nie</button><button id="confirm-ok-btn" class="btn warning">Tak</button></footer></div>
+    </div>
+
+    <nav class="bottom-nav" aria-label="Nawigacja mobilna" hidden>
+      <button class="btn" data-panel="menu">Menu</button>
+      <button class="btn" data-panel="handle-train">Obsługa</button>
+      <button class="btn" data-panel="takeover">Przejmij</button>
+      <button class="btn" data-panel="check">Sprawdź</button>
+    </nav>
+  </div>
+
+  <!-- Supabase SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
 
   <script>
-    // Wklej tutaj swój SUPABASE_URL i SUPABASE_ANON_KEY
+    // Supabase initialization
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
-
-    // Bezpieczna inicjalizacja: obsłuży różne globalne nazwy SDK
-    (function initSupabase() {
-      try {
-        // preferowane: window.supabase.createClient (UMD exposes window.supabase)
-        if (window.supabase && typeof window.supabase.createClient === 'function') {
-          window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else if (window.supabaseJs && typeof window.supabaseJs.createClient === 'function') {
-          window.supabase = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else if (typeof createClient === 'function') {
-          // some builds expose createClient globally
-          window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else {
-          console.error('Supabase SDK nie jest dostępne. Sprawdź URL CDN.');
-        }
-      } catch (err) {
-        console.error('Błąd inicjalizacji Supabase:', err);
+    try {
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
+        window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else if (typeof createClient === 'function') {
+        window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else {
+        console.error('Supabase SDK nie został poprawnie załadowany.');
       }
-    })();
-  </script>
-
-  <script>
-    const msg = document.getElementById('login-msg');
-
-    // helper do sprawdzenia, czy supabase jest zainicjalizowany
-    function supabaseReady() {
-      if (!window.supabase) {
-        msg.textContent = 'Błąd: klient Supabase nie został zainicjalizowany. Sprawdź anon key i CDN.';
-        return false;
-      }
-      return true;
+    } catch (e) {
+      console.error('Błąd inicjalizacji Supabase:', e);
     }
-
-    document.getElementById('login-demo-btn').addEventListener('click', () => {
-      sessionStorage.setItem('eRJ_user', 'demo@eregiojet.local');
-      window.location.href = 'app.html';
-    });
-
-    document.getElementById('register-btn').addEventListener('click', async () => {
-      msg.textContent = '';
-      if (!supabaseReady()) return;
-      const email = document.getElementById('login-email').value.trim();
-      const password = document.getElementById('login-password').value;
-      if (!email || !password) { msg.textContent = 'Podaj email i hasło'; return; }
-      try {
-        const res = await window.supabase.auth.signUp({ email, password });
-        console.log('signUp result', res);
-        if (res.error) msg.textContent = 'Błąd rejestracji: ' + res.error.message;
-        else msg.textContent = 'Zarejestrowano. Sprawdź e‑mail (jeśli włączone).';
-      } catch (e) {
-        console.error(e);
-        msg.textContent = 'Błąd rejestracji (sprawdź konsolę).';
-      }
-    });
-
-    document.getElementById('login-btn').addEventListener('click', async () => {
-      msg.textContent = '';
-      if (!supabaseReady()) return;
-      const email = document.getElementById('login-email').value.trim();
-      const password = document.getElementById('login-password').value;
-      if (!email || !password) { msg.textContent = 'Podaj email i hasło'; return; }
-      try {
-        const res = await window.supabase.auth.signInWithPassword({ email, password });
-        console.log('signIn result', res);
-        if (res.error) { msg.textContent = 'Błąd logowania: ' + res.error.message; return; }
-        const uid = res.data?.user?.id || res.user?.id;
-        sessionStorage.setItem('eRJ_user', uid);
-        window.location.href = 'app.html';
-      } catch (e) {
-        console.error(e);
-        msg.textContent = 'Błąd logowania (sprawdź konsolę).';
-      }
-    });
-
-    document.getElementById('magic-btn').addEventListener('click', async () => {
-      msg.textContent = '';
-      if (!supabaseReady()) return;
-      const email = document.getElementById('login-email').value.trim();
-      if (!email) { msg.textContent = 'Podaj email'; return; }
-      try {
-        const res = await window.supabase.auth.signInWithOtp({ email });
-        console.log('magic link result', res);
-        if (res.error) msg.textContent = 'Błąd: ' + res.error.message;
-        else msg.textContent = 'Wysłano magic link na e‑mail.';
-      } catch (e) {
-        console.error(e);
-        msg.textContent = 'Błąd wysyłki magic link (sprawdź konsolę).';
-      }
-    });
-
-    // szybki sanity check w konsoli
-    console.log('Supabase client:', window.supabase);
   </script>
+
+  <!-- Main app script -->
+  <script src="app.js" defer></script>
 </body>
 </html>
