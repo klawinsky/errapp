@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>eRegioJet — Logowanie</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <main class="auth-card" role="main">
+    <div class="brand-auth">
+      <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
+      <h1>eRegioJet</h1>
+      <p class="muted">Raporty pociągów — zaloguj się, aby kontynuować</p>
+    </div>
+
+    <form id="login-form" class="form-vertical" autocomplete="on" novalidate>
+      <label>
+        <span>Email</span>
+        <input id="login-email" type="email" autocomplete="email" required />
+      </label>
+
+      <label>
+        <span>Hasło</span>
+        <input id="login-password" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="form-actions">
+        <button id="login-btn" class="btn primary" type="submit">Zaloguj</button>
+      </div>
+
+      <div id="login-error" class="muted error" aria-live="polite" style="display:none;margin-top:8px"></div>
+    </form>
+
+    <footer class="auth-footer muted">
+      <small>Skontaktuj się z administratorem w sprawie konta.</small>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script>
+    const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
+    try {
+      window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } catch (e) {
+      console.error('Supabase init error', e);
+    }
+
+    (async function redirectIfLogged() {
+      try {
+        const { data } = await window.supabase.auth.getSession();
+        if (data?.session) window.location.href = 'index.html';
+      } catch (e) { /* ignore */ }
+    })();
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const form = document.getElementById('login-form');
+      const emailEl = document.getElementById('login-email');
+      const passEl = document.getElementById('login-password');
+      const errEl = document.getElementById('login-error');
+
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        errEl.style.display = 'none';
+        const email = (emailEl.value || '').trim();
+        const password = passEl.value || '';
+        if (!email || !password) {
+          errEl.textContent = 'Wypełnij email i hasło.'; errEl.style.display = 'block'; return;
+        }
+        try {
+          const { data, error } = await window.supabase.auth.signInWithPassword({ email, password });
+          if (error) {
+            errEl.textContent = error.message || 'Błąd logowania'; errEl.style.display = 'block'; return;
+          }
+          window.location.href = 'index.html';
+        } catch (e) {
+          errEl.textContent = 'Błąd połączenia'; errEl.style.display = 'block';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
