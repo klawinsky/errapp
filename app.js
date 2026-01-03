@@ -1,8 +1,7 @@
 /* app.js
-   eRegioJet — zaktualizowana wersja
-   - wymaga window.supabase zainicjalizowanego w index.html (anon key)
-   - normalizuje dane z DB do formatu używanego w UI (report.general)
-   - bezpieczne sprawdzanie wartości, obsługa błędów i logi
+   eRegioJet — pełny plik frontu z obsługą Supabase (anon key w app.html)
+   - wymaga: window.supabase zainicjalizowanego w app.html
+   - funkcje: auth check, CRUD raportów i powiązanych tabel, modale, render, druk
 */
 
 let currentReportId = null;
@@ -30,7 +29,6 @@ const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s))
   } catch (e) {
     console.warn('ensureLoggedIn error', e);
   }
-  // brak sesji -> przekieruj do logowania
   if (!window.location.pathname.endsWith('index.html')) {
     window.location.href = 'index.html';
   }
@@ -727,6 +725,9 @@ function loadReportIntoForm(report, isReadOnly) {
       from_station: r.general.from,
       to_station: r.general.to
     });
+    // reload full report to reflect relations
+    const report = await getReportById(currentReportId);
+    loadReportIntoForm(report, false);
     refreshLists();
   });
 });
