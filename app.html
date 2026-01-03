@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>eRegioJet — Aplikacja</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +15,7 @@
           <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
           <div class="brand-text">
             <div class="brand-title">eRegioJet</div>
-            <div class="brand-sub">Raporty z jazdy</div>
+            <div class="brand-sub">Raporty pociągów</div>
           </div>
         </div>
       </div>
@@ -37,12 +37,6 @@
             <li><button class="nav-btn" data-panel="takeover">Przejmij pociąg</button></li>
             <li><button class="nav-btn" data-panel="check">Sprawdź pociąg</button></li>
             <li><button class="nav-btn" data-panel="dyspo">DyspoPanel</button></li>
-          </ul>
-          <hr />
-          <ul class="external-links">
-            <li><a href="https://www.regiojet.pl" target="_blank" rel="noopener">RegioJet</a></li>
-            <li><a href="https://portalpasazera.pl" target="_blank" rel="noopener">Rozkład Jazdy</a></li>
-            <li><a href="https://forms.gle/LN3Ma4Cmg9M5LG6N7" target="_blank" rel="noopener">Zgłoś Usterkę</a></li>
           </ul>
         </nav>
       </aside>
@@ -97,7 +91,7 @@
           <div class="card">
             <h3>A. Dane ogólne</h3>
             <div class="form-grid">
-              <label><span>Numer pociągu</span><input id="general-train-number" type="text" /></label>
+              <label><span>Numer pociągu</span><input id="general-train-number" type="text" inputmode="numeric" /></label>
               <label><span>Dzień kursowania</span><input id="general-date" type="date" /></label>
               <label><span>Stacja od</span><input id="general-from" type="text" /></label>
               <label><span>Stacja do</span><input id="general-to" type="text" /></label>
@@ -206,6 +200,13 @@
       <div class="modal" role="dialog" aria-modal="true"><header class="modal-header"><h3>Potwierdzenie</h3></header><div id="confirm-message" class="modal-body"></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn ghost">Nie</button><button id="confirm-ok-btn" class="btn warning">Tak</button></footer></div>
     </div>
 
+    <!-- Bottom nav for mobile -->
+    <nav class="bottom-nav" aria-label="Nawigacja mobilna" hidden>
+      <button class="btn" data-panel="menu">Menu</button>
+      <button class="btn" data-panel="handle-train">Obsługa</button>
+      <button class="btn" data-panel="takeover">Przejmij</button>
+      <button class="btn" data-panel="check">Sprawdź</button>
+    </nav>
   </div>
 
   <!-- Supabase SDK (UMD) i inicjalizacja -->
@@ -215,7 +216,6 @@
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
 
-    // Inicjalizacja klienta Supabase (UMD exposes window.supabase or createClient)
     try {
       if (window.supabase && typeof window.supabase.createClient === 'function') {
         window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
