@@ -3,6 +3,57 @@
    - wszystkie selektory są zabezpieczone przed null, inicjalizacja UI odbywa się po DOMContentLoaded
    - usunięte odwołania do przycisków demo i magic link
 */
+// --- START: waitForDomAndSelectors (bezpieczny poller) ---
+const REQUIRED_SELECTORS = [
+  '#sidebar-toggle','#sidebar','#user-email-display','#logout-btn',
+  '.nav-btn','[data-open]','#new-report-btn',
+  '#add-loco-btn','#add-wagon-btn','#add-crew-btn','#add-run-btn',
+  '#add-dispo-btn','#add-remark-btn','#save-report-btn','#generate-pdf-btn',
+  '#finish-btn','#handover-btn','#loco-table','#wagon-table','#crew-table',
+  '#run-table','#dispo-list','#remark-list','#takeover-table','#check-table','#dyspo-table',
+  '#modal-backdrop','#modal-title','#modal-body','#modal-save-btn','#modal-cancel-btn','#modal-close',
+  '#confirm-backdrop','#confirm-message','#confirm-ok-btn','#confirm-cancel-btn','.bottom-nav'
+];
+
+function waitForDomAndSelectors(timeoutMs = 8000, intervalMs = 120) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    function check() {
+      // DOM ready?
+      if (document.readyState === 'loading') {
+        if (Date.now() - start > timeoutMs) return reject(new Error('DOMContentLoaded timeout'));
+        return setTimeout(check, intervalMs);
+      }
+      // check selectors
+      const missing = REQUIRED_SELECTORS.filter(s => {
+        try { return document.querySelector(s) === null; } catch(e) { return true; }
+      });
+      if (missing.length === 0) return resolve(true);
+      if (Date.now() - start > timeoutMs) return reject(new Error('Missing selectors: ' + JSON.stringify(missing)));
+      setTimeout(check, intervalMs);
+    }
+    check();
+  });
+}
+
+// Użycie: opóźnij initApp do momentu, gdy elementy będą dostępne
+const _origInit = window.initApp;
+window.initApp = async function(...args) {
+  try {
+    await waitForDomAndSelectors();
+  } catch (err) {
+    console.error('waitForDomAndSelectors error:', err.message);
+    // wypisz brakujące selektory dla debugowania
+    const missing = REQUIRED_SELECTORS.filter(s => {
+      try { return document.querySelector(s) === null; } catch(e) { return true; }
+    });
+    console.warn('Brakujące selektory po timeout:', missing);
+    // nadal próbujemy uruchomić initApp, ale bezpiecznie
+  }
+  if (typeof _origInit === 'function') return _origInit.apply(this, args);
+  return;
+};
+// --- END: waitForDomAndSelectors ---
 
 let currentReportId = null;
 let readOnlyMode = false;
