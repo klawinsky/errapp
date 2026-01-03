@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>eRegioJet — Aplikacja</title>
+  <title>eRegioJet — Raporty pociągów</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -42,7 +42,6 @@
       </aside>
 
       <main class="main" id="main">
-        <!-- MENU -->
         <section id="panel-menu" class="panel">
           <div class="panel-header">
             <h2>Menu</h2>
@@ -78,7 +77,6 @@
           </div>
         </section>
 
-        <!-- HANDLE TRAIN -->
         <section id="panel-handle-train" class="panel" hidden>
           <div class="panel-header">
             <h2>Obsłuż pociąg — Raport z jazdy</h2>
@@ -149,7 +147,6 @@
           </div>
         </section>
 
-        <!-- TAKEOVER -->
         <section id="panel-takeover" class="panel" hidden>
           <div class="panel-header">
             <h2>Przejmij pociąg</h2>
@@ -161,7 +158,6 @@
           </div>
         </section>
 
-        <!-- CHECK -->
         <section id="panel-check" class="panel" hidden>
           <div class="panel-header">
             <h2>Sprawdź pociąg</h2>
@@ -173,7 +169,6 @@
           </div>
         </section>
 
-        <!-- DYSPO -->
         <section id="panel-dyspo" class="panel" hidden>
           <div class="panel-header">
             <h2>DyspoPanel</h2>
@@ -187,7 +182,6 @@
       </main>
     </div>
 
-    <!-- MODALE I POTWIERDZENIA -->
     <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header class="modal-header"><h3 id="modal-title"></h3><button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button></header>
@@ -200,7 +194,6 @@
       <div class="modal" role="dialog" aria-modal="true"><header class="modal-header"><h3>Potwierdzenie</h3></header><div id="confirm-message" class="modal-body"></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn ghost">Nie</button><button id="confirm-ok-btn" class="btn warning">Tak</button></footer></div>
     </div>
 
-    <!-- Bottom nav for mobile -->
     <nav class="bottom-nav" aria-label="Nawigacja mobilna" hidden>
       <button class="btn" data-panel="menu">Menu</button>
       <button class="btn" data-panel="handle-train">Obsługa</button>
@@ -209,18 +202,13 @@
     </nav>
   </div>
 
-  <!-- Supabase SDK (UMD) i inicjalizacja -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
   <script>
-    // Podmień poniższy anon key na swój z panelu Supabase
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI';
-
     try {
-      if (window.supabase && typeof window.supabase.createClient === 'function') {
-        window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      } else if (window.supabaseJs && typeof window.supabaseJs.createClient === 'function') {
-        window.supabase = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
+        window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       } else if (typeof createClient === 'function') {
         window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       } else {
@@ -231,7 +219,6 @@
     }
   </script>
 
-  <!-- główny skrypt aplikacji -->
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
