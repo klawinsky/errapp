@@ -1,57 +1,96 @@
-/* app.js — kompletny plik frontu dostosowany do mobilnego użycia
-   - wymaga: window.supabase zainicjalizowanego w app.html
-   - używa `sb` jako lokalnej referencji do klienta Supabase
+/* app.js — poprawiony, kompletny plik do podmiany
+   - używa `sb` jako bezpiecznej referencji do klienta Supabase (inicjalizowanego w app.html)
+   - wszystkie selektory są zabezpieczone przed null, inicjalizacja UI odbywa się po DOMContentLoaded
+   - usunięte odwołania do przycisków demo i magic link
 */
 
 let currentReportId = null;
 let readOnlyMode = false;
+
+// Bezpieczna referencja do klienta Supabase (nie redeklarujemy globalnego identyfikatora)
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
 
-/* helpers */
+/* ---------- Helpers ---------- */
 const qs = (s, r = document) => (r || document).querySelector(s);
 const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 
-/* Auth helpers */
+/* ---------- Auth helpers ---------- */
 async function getCurrentUid() {
   const s = sessionStorage.getItem('eRJ_user');
   if (s) return s;
-  try { if (!sb) return null; const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
+  try {
+    if (!sb) return null;
+    const { data } = await sb.auth.getUser();
+    return data?.user?.id || null;
+  } catch (e) {
+    return null;
+  }
 }
 
-/* Map DB row -> UI */
+/* Map DB row -> UI report object */
 function mapDbReportToUi(r) {
   if (!r) return null;
   return {
-    id: r.id, status: r.status, created_by: r.created_by, created_at: r.created_at,
-    general: { trainNumber: r.train_number || '', date: r.date || '', from: r.from_station || '', to: r.to_station || '' },
-    consist: r.consist || [], crew: r.crew || [], runs: r.runs || [], dispos: r.dispos || [], remarks: r.remarks || []
+    id: r.id,
+    status: r.status,
+    created_by: r.created_by,
+    created_at: r.created_at,
+    general: {
+      trainNumber: r.train_number || '',
+      date: r.date || '',
+      from: r.from_station || '',
+      to: r.to_station || ''
+    },
+    consist: r.consist || [],
+    crew: r.crew || [],
+    runs: r.runs || [],
+    dispos: r.dispos || [],
+    remarks: r.remarks || []
   };
 }
 
-/* CRUD */
+/* ---------- Supabase CRUD ---------- */
 async function loadReports() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return [];
-  const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('created_by', uid).order('created_at', { ascending: true });
+  const { data, error } = await sb
+    .from('reports')
+    .select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)')
+    .eq('created_by', uid)
+    .order('created_at', { ascending: true });
   if (error) { console.error('loadReports error', error); return []; }
   return (data || []).map(mapDbReportToUi);
 }
+
 async function getReportById(id) {
   if (!id || !sb) return null;
-  const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('id', id).single();
+  const { data, error } = await sb
+    .from('reports')
+    .select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)')
+    .eq('id', id)
+    .single();
   if (error) { console.error('getReportById error', error); return null; }
   return mapDbReportToUi(data);
 }
+
 async function createEmptyReport() {
   const uid = await getCurrentUid();
   if (!sb) { console.error('createEmptyReport: sb not initialized'); return null; }
-  const payload = { status: 'in_progress', train_number: '', date: null, from_station: '', to_station: '', created_by: uid };
+  const payload = {
+    status: 'in_progress',
+    train_number: '',
+    date: null,
+    from_station: '',
+    to_station: '',
+    created_by: uid
+  };
   const { data, error } = await sb.from('reports').insert([payload]).select().single();
   if (error) { console.error('createEmptyReport error', error); return null; }
   return mapDbReportToUi(data);
 }
+
 async function updateReportFields(id, fields) {
   if (!id || !sb) { console.error('updateReportFields: missing id or sb'); return null; }
   const { data, error } = await sb.from('reports').update(fields).eq('id', id).select().single();
@@ -59,37 +98,60 @@ async function updateReportFields(id, fields) {
   return mapDbReportToUi(data);
 }
 
-/* related records */
+/* related records: add */
 async function addConsist(reportId, type, mark, fromStation, toStation) {
-  if (!reportId || !sb) return null;
-  const { data, error } = await sb.from('consist').insert([{ report_id: reportId, type, mark, from_station: fromStation || '', to_station: toStation || '' }]).select();
+  if (!reportId || !sb) { console.error('addConsist: missing reportId or sb'); return null; }
+  const { data, error } = await sb.from('consist').insert([{
+    report_id: reportId,
+    type,
+    mark,
+    from_station: fromStation || '',
+    to_station: toStation || ''
+  }]).select();
   if (error) console.error('addConsist error', error);
   return data;
 }
 async function addCrew(reportId, name, role, fromStation, toStation) {
-  if (!reportId || !sb) return null;
-  const { data, error } = await sb.from('crew').insert([{ report_id: reportId, name, role, from_station: fromStation || '', to_station: toStation || '' }]).select();
+  if (!reportId || !sb) { console.error('addCrew: missing reportId or sb'); return null; }
+  const { data, error } = await sb.from('crew').insert([{
+    report_id: reportId,
+    name,
+    role,
+    from_station: fromStation || '',
+    to_station: toStation || ''
+  }]).select();
   if (error) console.error('addCrew error', error);
   return data;
 }
 async function addRun(reportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders) {
-  if (!reportId || !sb) return null;
-  const { data, error } = await sb.from('runs').insert([{ report_id: reportId, station, planned_arr: plannedArr || null, actual_arr: actualArr || null, planned_dep: plannedDep || null, actual_dep: actualDep || null, delay_reason: delayReason || '', orders: orders || '' }]).select();
+  if (!reportId || !sb) { console.error('addRun: missing reportId or sb'); return null; }
+  const { data, error } = await sb.from('runs').insert([{
+    report_id: reportId,
+    station,
+    planned_arr: plannedArr || null,
+    actual_arr: actualArr || null,
+    planned_dep: plannedDep || null,
+    actual_dep: actualDep || null,
+    delay_reason: delayReason || '',
+    orders: orders || ''
+  }]).select();
   if (error) console.error('addRun error', error);
   return data;
 }
 async function addDispo(reportId, source, text) {
-  if (!reportId || !sb) return null;
+  if (!reportId || !sb) { console.error('addDispo: missing reportId or sb'); return null; }
   const { data, error } = await sb.from('dispos').insert([{ report_id: reportId, source, text }]).select();
   if (error) console.error('addDispo error', error);
   return data;
 }
 async function addRemark(reportId, text) {
-  if (!reportId || !sb) return null;
+  if (!reportId || !sb) { console.error('addRemark: missing reportId or sb'); return null; }
   const { data, error } = await sb.from('remarks').insert([{ report_id: reportId, text }]).select();
   if (error) console.error('addRemark error', error);
   return data;
 }
+
+/* delete / update helpers */
 async function deleteRow(table, id) {
   if (!table || !id || !sb) return null;
   const { data, error } = await sb.from(table).delete().eq('id', id);
@@ -103,7 +165,7 @@ async function updateRow(table, id, fields) {
   return data;
 }
 
-/* render helpers */
+/* ---------- Render helpers ---------- */
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
   if (!label) return;
@@ -112,9 +174,11 @@ function updateStatusLabel(report) {
   else if (report.status === "handed_over") label.textContent = "Status: Przekazana do przejęcia";
   else label.textContent = "Status: W trakcie prowadzenia";
 }
+
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
-  if (locoTbody) locoTbody.innerHTML = ""; if (wagonTbody) wagonTbody.innerHTML = "";
+  if (locoTbody) locoTbody.innerHTML = "";
+  if (wagonTbody) wagonTbody.innerHTML = "";
   (report?.consist || []).forEach((l) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from_station)}</td><td>${escapeHtml(l.to_station)}</td>
@@ -123,6 +187,7 @@ function renderConsist(report) {
     if (l.type === 'loco') locoTbody.appendChild(tr); else wagonTbody.appendChild(tr);
   });
 }
+
 function renderCrew(report) {
   const tbody = qs("#crew-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.crew || []).forEach(c => {
@@ -133,6 +198,7 @@ function renderCrew(report) {
     tbody.appendChild(tr);
   });
 }
+
 function calculateDelayMinutes(planned, actual) {
   if (!planned || !actual) return null;
   const p = new Date(planned); const a = new Date(actual);
@@ -145,6 +211,7 @@ function formatDelayCell(delay) {
   if (delay > 0) return `<span class="delay-late">+${delay} min</span>`;
   return `<span class="delay-on-time">0 min</span>`;
 }
+
 function renderRuns(report) {
   const tbody = qs("#run-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.runs || []).forEach(r => {
@@ -162,6 +229,7 @@ function renderRuns(report) {
     tbody.appendChild(tr);
   });
 }
+
 function renderDispos(report) {
   const list = qs("#dispo-list"); if (!list) return; list.innerHTML = "";
   (report?.dispos || []).forEach(d => {
@@ -172,6 +240,7 @@ function renderDispos(report) {
     list.appendChild(li);
   });
 }
+
 function renderRemarks(report) {
   const list = qs("#remark-list"); if (!list) return; list.innerHTML = "";
   (report?.remarks || []).forEach(r => {
@@ -182,7 +251,7 @@ function renderRemarks(report) {
   });
 }
 
-/* modal system */
+/* ---------- Modal system ---------- */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -191,6 +260,7 @@ const modalCancelBtn = qs("#modal-cancel-btn");
 const modalCloseBtn = qs("#modal-close");
 let modalSaveHandler = null;
 let lastFocusedElement = null;
+
 function openModal(title, bodyHtml, onSave) {
   if (!modalBackdrop || !modalBody) return;
   modalTitle.textContent = title;
@@ -225,13 +295,15 @@ function trapTabKey(e) {
   if (e.key !== "Tab") return;
   const focusable = modalBackdrop.querySelectorAll("input,select,textarea,button,a,[tabindex]:not([tabindex='-1'])");
   if (!focusable.length) return;
-  const first = focusable[0], last = focusable[focusable.length - 1];
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
   if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* UI bindings */
+/* ---------- UI action bindings (attached after DOM ready) ---------- */
 function bindUiActions() {
+  // safe helper
   const safeAddListener = (selector, handler) => { const el = qs(selector); if (el) el.addEventListener("click", handler); };
 
   safeAddListener("#add-loco-btn", () => {
@@ -343,7 +415,7 @@ function bindUiActions() {
     });
   });
 
-  // Delegation for edit/delete and actions
+  // Delegation for edit/delete and action buttons
   document.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
@@ -409,7 +481,12 @@ function bindUiActions() {
       if (!created) { alert('Błąd tworzenia raportu'); return; }
       currentReportId = created.id;
     }
-    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
+    await updateReportFields(currentReportId, {
+      train_number: r.general.trainNumber,
+      date: r.general.date || null,
+      from_station: r.general.from,
+      to_station: r.general.to
+    });
     alert("Raport zapisany.");
     const report = await getReportById(currentReportId);
     loadReportIntoForm(report, false);
@@ -423,7 +500,8 @@ function bindUiActions() {
     openPrintWindow(report);
   });
 
-  if (qs("#finish-btn")) qs("#finish-btn").addEventListener("click", async () => {
+  const finishBtn = qs("#finish-btn");
+  if (finishBtn) finishBtn.addEventListener("click", async () => {
     if (!currentReportId) { alert('Brak aktywnego raportu'); return; }
     openConfirm("Zamknięcie obsługi spowoduje ostateczne zapisanie danych. Czy chcesz zamknąć?", async () => {
       await updateReportFields(currentReportId, { status: 'finished' });
@@ -433,7 +511,8 @@ function bindUiActions() {
     });
   });
 
-  if (qs("#handover-btn")) qs("#handover-btn").addEventListener("click", async () => {
+  const handoverBtn = qs("#handover-btn");
+  if (handoverBtn) handoverBtn.addEventListener("click", async () => {
     if (!currentReportId) { alert('Brak aktywnego raportu'); return; }
     await handoverReport(currentReportId);
   });
@@ -450,7 +529,7 @@ function bindUiActions() {
     refreshLists();
   });
 
-  // Bottom nav
+  // Bottom nav (mobile)
   const bottomNav = qs('.bottom-nav');
   if (bottomNav) {
     bottomNav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
@@ -462,7 +541,7 @@ function bindUiActions() {
   }
 }
 
-/* handover/takeover */
+/* ---------- Handover / Takeover ---------- */
 async function handoverReport(reportId) {
   if (!reportId || !sb) return;
   const { data, error } = await sb.from('reports').update({ status: 'handed_over' }).eq('id', reportId).select().single();
@@ -471,22 +550,30 @@ async function handoverReport(reportId) {
   loadReportIntoForm(report, true);
   refreshLists();
 }
+
 async function takeOverReport(reportId) {
   if (!reportId || !sb) return;
   const { data: userData } = await sb.auth.getUser();
   const uid = userData?.user?.id;
   if (!uid) { alert('Musisz być zalogowany, aby przejąć raport'); return; }
-  const { data, error } = await sb.from('reports').update({ created_by: uid, status: 'in_progress' }).eq('id', reportId).select().single();
+  const { data, error } = await sb
+    .from('reports')
+    .update({ created_by: uid, status: 'in_progress' })
+    .eq('id', reportId)
+    .select()
+    .single();
   if (error) { console.error('takeover error', error); alert('Błąd przy przejmowaniu raportu: ' + (error.message || JSON.stringify(error))); return; }
   const report = await getReportById(reportId);
   loadReportIntoForm(report, false);
   refreshLists();
 }
 
-/* lists */
+/* ---------- Lists and refresh ---------- */
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
+
+  // takeover
   const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
   if (tErr) console.error('refreshLists takeover error', tErr);
   const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
@@ -497,6 +584,7 @@ async function refreshLists() {
     takeoverTbody.appendChild(tr);
   });
 
+  // check (today/yesterday)
   const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
   const dateToStr = d => d.toISOString().slice(0,10);
   const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('created_at', { ascending: false });
@@ -512,6 +600,7 @@ async function refreshLists() {
     }
   });
 
+  // dyspo
   const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
   if (arErr) console.error('refreshLists activeReports error', arErr);
   const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
@@ -534,7 +623,7 @@ async function refreshLists() {
   }
 }
 
-/* read/load form */
+/* ---------- Read / Load report form ---------- */
 async function readReportFromForm() {
   const train = qs("#general-train-number")?.value.trim() || "";
   const date = qs("#general-date")?.value || null;
@@ -542,22 +631,31 @@ async function readReportFromForm() {
   const to = qs("#general-to")?.value.trim() || "";
   return { general: { trainNumber: train, date, from, to } };
 }
+
 function loadReportIntoForm(report, isReadOnly) {
   if (!report) return;
   currentReportId = report.id;
   readOnlyMode = !!isReadOnly;
-  qs("#general-train-number").value = report.general.trainNumber || "";
-  qs("#general-date").value = report.general.date || "";
-  qs("#general-from").value = report.general.from || "";
-  qs("#general-to").value = report.general.to || "";
-  renderConsist(report); renderCrew(report); renderRuns(report); renderDispos(report); renderRemarks(report);
+  const elTrain = qs("#general-train-number"); if (elTrain) elTrain.value = report.general.trainNumber || "";
+  const elDate = qs("#general-date"); if (elDate) elDate.value = report.general.date || "";
+  const elFrom = qs("#general-from"); if (elFrom) elFrom.value = report.general.from || "";
+  const elTo = qs("#general-to"); if (elTo) elTo.value = report.general.to || "";
+  renderConsist(report);
+  renderCrew(report);
+  renderRuns(report);
+  renderDispos(report);
+  renderRemarks(report);
   updateStatusLabel(report);
   const disabled = readOnlyMode || report.status === "finished";
-  ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
-  ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
+  ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => {
+    const el = qs(id); if (el) el.disabled = disabled;
+  });
+  ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => {
+    const el = qs(id); if (el) el.disabled = disabled;
+  });
 }
 
-/* autosave with debounce */
+/* autosave general fields (debounced) */
 let autosaveTimer;
 function bindAutosave() {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(sel => {
@@ -572,7 +670,12 @@ function bindAutosave() {
           currentReportId = created.id;
         }
         const r = await readReportFromForm();
-        await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
+        await updateReportFields(currentReportId, {
+          train_number: r.general.trainNumber,
+          date: r.general.date || null,
+          from_station: r.general.from,
+          to_station: r.general.to
+        });
         const report = await getReportById(currentReportId);
         loadReportIntoForm(report, false);
         refreshLists();
@@ -581,7 +684,7 @@ function bindAutosave() {
   });
 }
 
-/* confirm modal */
+/* ---------- Confirm modal ---------- */
 const confirmBackdrop = qs("#confirm-backdrop");
 const confirmMessage = qs("#confirm-message");
 const confirmOkBtn = qs("#confirm-ok-btn");
@@ -604,54 +707,112 @@ function closeConfirm() {
 if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", closeConfirm);
 if (confirmOkBtn) confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
-/* print */
+/* ---------- Print window ---------- */
 function openPrintWindow(report) {
   const win = window.open("", "_blank", "noopener");
   if (!win) { alert("Przeglądarka zablokowała otwieranie nowego okna. Zezwól na wyskakujące okna i spróbuj ponownie."); return; }
-  const css = `body{font-family:Inter,Arial,Helvetica,sans-serif;color:#0b1220;margin:20px}h1{font-size:20px;margin-bottom:6px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th,td{border:1px solid #ddd;padding:8px;font-size:12px}th{background:#f4f6fb;text-align:left}`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Raport ${escapeHtml(report.general.trainNumber||'')}</title><style>${css}</style></head><body><h1>Raport — ${escapeHtml(report.general.trainNumber||'')}</h1><div>Data: ${escapeHtml(report.general.date||'')}</div></body></html>`;
+  const css = `
+    body{font-family:Inter,Arial,Helvetica,sans-serif;color:#0b1220;margin:20px}
+    h1{font-size:20px;margin-bottom:6px}
+    h2{font-size:16px;margin:10px 0}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px}
+    th,td{border:1px solid #ddd;padding:8px;font-size:12px}
+    th{background:#f4f6fb;text-align:left}
+    .section{margin-bottom:18px}
+    .small{font-size:12px;color:#666}
+    @media print{@page{size:A4;margin:12mm}}
+  `;
+  const html = `
+    <!doctype html><html><head><meta charset="utf-8"/><title>Raport pociągu ${escapeHtml(report.general.trainNumber || '')}</title><style>${css}</style></head><body>
+    <h1>Raport z jazdy — ${escapeHtml(report.general.trainNumber || '')}</h1>
+    <div class="small">Data: ${escapeHtml(report.general.date || '')} | Relacja: ${escapeHtml(report.general.from || '')} – ${escapeHtml(report.general.to || '')}</div>
+    </body></html>`;
   win.document.open(); win.document.write(html); win.document.close();
 }
 
-/* init */
+/* ---------- Initialization after DOM ready ---------- */
 async function initApp() {
+  // Ensure user is set in UI if already logged
   try {
     const { data } = sb ? await sb.auth.getUser() : { data: null };
-    if (data && data.user && data.user.email) { const el = qs('#user-email-display'); if (el) el.textContent = data.user.email; sessionStorage.setItem('eRJ_user', data.user.id); }
-  } catch (e) { console.warn('auth init', e); }
-
-  // nav buttons
-  const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
-  navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
-
-  // data-open
-  Array.from(document.querySelectorAll("[data-open]")).forEach(b => b.addEventListener("click", () => { const panel = b.getAttribute("data-open"); const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`); if (nav) nav.click(); else showPanel(panel); }));
-
-  // sidebar toggle
-  const sidebar = qs("#sidebar"); const sidebarToggle = qs("#sidebar-toggle");
-  if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener("click", (e) => { e.stopPropagation(); sidebar.classList.toggle("open"); sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open")); });
-    document.addEventListener("click", (e) => { if (!sidebar.classList.contains("open")) return; if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return; sidebar.classList.remove("open"); sidebarToggle.setAttribute("aria-expanded", "false"); });
+    if (data && data.user && data.user.email) {
+      const el = qs('#user-email-display'); if (el) el.textContent = data.user.email;
+      sessionStorage.setItem('eRJ_user', data.user.id);
+    }
+  } catch (e) {
+    console.warn('ensureLoggedIn error', e);
   }
 
-  // logout
-  const logoutBtn = qs("#logout-btn");
-  if (logoutBtn) logoutBtn.addEventListener("click", async () => { try { if (sb) await sb.auth.signOut(); } catch(e){} sessionStorage.removeItem('eRJ_user'); window.location.href = 'index.html'; });
+  // Bind navigation and UI actions
+  const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
+  navBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      navBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const panel = btn.getAttribute("data-panel");
+      showPanel(panel);
+      const sidebarEl = qs("#sidebar");
+      if (sidebarEl) sidebarEl.classList.remove("open");
+    });
+  });
 
+  Array.from(document.querySelectorAll("[data-open]")).forEach(b => {
+    b.addEventListener("click", () => {
+      const panel = b.getAttribute("data-open");
+      const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
+      if (nav) nav.click(); else showPanel(panel);
+    });
+  });
+
+  // Sidebar toggle
+  const sidebar = qs("#sidebar");
+  const sidebarToggle = qs("#sidebar-toggle");
+  if (sidebarToggle && sidebar) {
+    sidebarToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sidebar.classList.toggle("open");
+      sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
+    });
+    document.addEventListener("click", (e) => {
+      if (!sidebar.classList.contains("open")) return;
+      if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
+      sidebar.classList.remove("open");
+      sidebarToggle.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  // Logout
+  const logoutBtn = qs("#logout-btn");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try { if (sb) await sb.auth.signOut(); } catch(e) {}
+      sessionStorage.removeItem('eRJ_user');
+      window.location.href = 'index.html';
+    });
+  }
+
+  // Bind UI actions and autosave
   bindUiActions();
   bindAutosave();
 
+  // Initial load
   try {
     const reports = await loadReports();
     if (reports && reports.length) {
       const inProg = reports.find(r => r.status === 'in_progress');
       const toLoad = inProg || reports[0];
-      if (toLoad) { const full = await getReportById(toLoad.id); loadReportIntoForm(full, false); }
+      if (toLoad) {
+        const full = await getReportById(toLoad.id);
+        loadReportIntoForm(full, false);
+      }
     }
     refreshLists();
-  } catch (e) { console.error('initApp load error', e); }
+  } catch (e) {
+    console.error('initial load error', e);
+  }
 }
 
+/* showPanel utility */
 function showPanel(name) {
   qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
@@ -659,5 +820,13 @@ function showPanel(name) {
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => initApp().catch(e => console.error('initApp error', e)));
-else initApp().catch(e => console.error('initApp error', e));
+/* Start after DOM ready */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    initApp().catch(e => console.error('initApp error', e));
+  });
+} else {
+  initApp().catch(e => console.error('initApp error', e));
+}
+
+/* end of file */
