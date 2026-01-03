@@ -1,13 +1,7 @@
-/* app.js — kompletny, bezpieczny i responsywny skrypt aplikacji
-   - wymaga: window.supabase zainicjalizowanego w app.html
-   - wszystkie selektory są sprawdzane przed użyciem
-   - skrypt ładowany z defer, inicjalizacja po DOMContentLoaded
-*/
-
+/* app.js — kompletny plik aplikacji */
 console.log('app.js loaded');
 
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
-
 const qs = (s, r = document) => (r || document).querySelector(s);
 const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
 function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -16,14 +10,28 @@ function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* ---------- Auth helpers ---------- */
+/* Auth helpers */
+async function ensureAuthenticatedOrRedirect() {
+  try {
+    const { data } = await sb.auth.getSession();
+    if (!data?.session) { window.location.href = 'login.html'; return false; }
+    sessionStorage.setItem('eRJ_user', data.session.user.id);
+    const emailEl = qs('#user-email-display');
+    if (emailEl) emailEl.textContent = data.session.user.email || '';
+    return true;
+  } catch (e) {
+    console.warn('auth check error', e);
+    window.location.href = 'login.html';
+    return false;
+  }
+}
 async function getCurrentUid() {
   const s = sessionStorage.getItem('eRJ_user');
   if (s) return s;
-  try { if (!sb) return null; const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
+  try { const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
 }
 
-/* ---------- DB mapping ---------- */
+/* DB mapping */
 function mapDbReportToUi(r) {
   if (!r) return null;
   return {
@@ -33,7 +41,7 @@ function mapDbReportToUi(r) {
   };
 }
 
-/* ---------- Supabase CRUD ---------- */
+/* CRUD */
 async function loadReports() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return [];
@@ -106,7 +114,7 @@ async function updateRow(table, id, fields) {
   return data;
 }
 
-/* ---------- Render helpers ---------- */
+/* render helpers */
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
   if (!label) return;
@@ -115,7 +123,6 @@ function updateStatusLabel(report) {
   else if (report.status === "handed_over") label.textContent = "Status: Przekazana do przejęcia";
   else label.textContent = "Status: W trakcie prowadzenia";
 }
-
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
   if (locoTbody) locoTbody.innerHTML = "";
@@ -128,7 +135,6 @@ function renderConsist(report) {
     if (l.type === 'loco') locoTbody.appendChild(tr); else wagonTbody.appendChild(tr);
   });
 }
-
 function renderCrew(report) {
   const tbody = qs("#crew-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.crew || []).forEach(c => {
@@ -139,7 +145,6 @@ function renderCrew(report) {
     tbody.appendChild(tr);
   });
 }
-
 function calculateDelayMinutes(planned, actual) {
   if (!planned || !actual) return null;
   const p = new Date(planned); const a = new Date(actual);
@@ -152,7 +157,6 @@ function formatDelayCell(delay) {
   if (delay > 0) return `<span class="delay-late">+${delay} min</span>`;
   return `<span class="delay-on-time">0 min</span>`;
 }
-
 function renderRuns(report) {
   const tbody = qs("#run-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.runs || []).forEach(r => {
@@ -170,7 +174,6 @@ function renderRuns(report) {
     tbody.appendChild(tr);
   });
 }
-
 function renderDispos(report) {
   const list = qs("#dispo-list"); if (!list) return; list.innerHTML = "";
   (report?.dispos || []).forEach(d => {
@@ -181,7 +184,6 @@ function renderDispos(report) {
     list.appendChild(li);
   });
 }
-
 function renderRemarks(report) {
   const list = qs("#remark-list"); if (!list) return; list.innerHTML = "";
   (report?.remarks || []).forEach(r => {
@@ -192,7 +194,7 @@ function renderRemarks(report) {
   });
 }
 
-/* ---------- Modal system ---------- */
+/* modal system */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -201,7 +203,6 @@ const modalCancelBtn = qs("#modal-cancel-btn");
 const modalCloseBtn = qs("#modal-close");
 let modalSaveHandler = null;
 let lastFocusedElement = null;
-
 function openModal(title, bodyHtml, onSave) {
   if (!modalBackdrop || !modalBody) return;
   modalTitle.textContent = title;
@@ -241,7 +242,7 @@ function trapTabKey(e) {
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* ---------- UI bindings ---------- */
+/* UI bindings */
 function bindUiActions() {
   const safe = (sel, cb) => { const el = qs(sel); if (el) el.addEventListener('click', cb); };
 
@@ -405,7 +406,7 @@ function bindUiActions() {
           closeModal(); refreshLists();
         });
       } else {
-        alert('Edycja tego typu rekordu dostępna w kolejnej wersji demo.');
+        alert('Edycja tego typu rekordu dostępna w kolejnej wersji.');
       }
     }
   });
@@ -437,8 +438,8 @@ function bindUiActions() {
     if (!currentReportId) { alert('Brak aktywnego raportu'); return; }
     openConfirm("Zamknięcie obsługi spowoduje ostateczne zapisanie danych. Czy chcesz zamknąć?", async () => {
       await updateReportFields(currentReportId, { status: 'finished' });
-      const r = await getReportById(currentReportId);
-      loadReportIntoForm(r, true);
+      currentReportId = null;
+      showPanel('menu');
       refreshLists();
     });
   });
@@ -447,6 +448,9 @@ function bindUiActions() {
   if (handoverBtn) handoverBtn.addEventListener("click", async () => {
     if (!currentReportId) { alert('Brak aktywnego raportu'); return; }
     await handoverReport(currentReportId);
+    currentReportId = null;
+    showPanel('menu');
+    refreshLists();
   });
 
   const newReportBtn = qs("#new-report-btn");
@@ -471,14 +475,11 @@ function bindUiActions() {
   }
 }
 
-/* ---------- Handover / Takeover ---------- */
+/* handover/takeover */
 async function handoverReport(reportId) {
   if (!reportId || !sb) return;
   const { data, error } = await sb.from('reports').update({ status: 'handed_over' }).eq('id', reportId).select().single();
   if (error) { console.error('handover error', error); alert('Błąd przy przekazywaniu obsługi: ' + (error.message || JSON.stringify(error))); return; }
-  const report = await getReportById(reportId);
-  loadReportIntoForm(report, true);
-  refreshLists();
 }
 async function takeOverReport(reportId) {
   if (!reportId || !sb) return;
@@ -492,7 +493,7 @@ async function takeOverReport(reportId) {
   refreshLists();
 }
 
-/* ---------- Lists and refresh ---------- */
+/* lists */
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
@@ -544,7 +545,7 @@ async function refreshLists() {
   }
 }
 
-/* ---------- Read / Load report form ---------- */
+/* read/load form */
 async function readReportFromForm() {
   const train = qs("#general-train-number")?.value.trim() || "";
   const date = qs("#general-date")?.value || null;
@@ -567,7 +568,7 @@ function loadReportIntoForm(report, isReadOnly) {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
 }
 
-/* autosave debounce */
+/* autosave */
 let autosaveTimer;
 function bindAutosave() {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(sel => {
@@ -625,27 +626,43 @@ function openPrintWindow(report) {
 
 /* init */
 async function initApp() {
-  try {
-    const { data } = sb ? await sb.auth.getUser() : { data: null };
-    if (data && data.user && data.user.email) { const el = qs('#user-email-display'); if (el) el.textContent = data.user.email; sessionStorage.setItem('eRJ_user', data.user.id); }
-  } catch (e) { console.warn('auth init', e); }
+  const ok = await ensureAuthenticatedOrRedirect();
+  if (!ok) return;
 
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
   navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
 
   Array.from(document.querySelectorAll("[data-open]")).forEach(b => b.addEventListener("click", () => { const panel = b.getAttribute("data-open"); const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`); if (nav) nav.click(); else showPanel(panel); }));
 
-  const sidebar = qs("#sidebar"); const sidebarToggle = qs("#sidebar-toggle");
+  const sidebar = qs("#sidebar");
+  const sidebarToggle = qs("#sidebar-toggle");
   if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener("click", (e) => { e.stopPropagation(); sidebar.classList.toggle("open"); sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open")); });
-    document.addEventListener("click", (e) => { if (!sidebar.classList.contains("open")) return; if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return; sidebar.classList.remove("open"); sidebarToggle.setAttribute("aria-expanded", "false"); });
+    sidebarToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sidebar.classList.toggle("open");
+      sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
+    });
+    document.addEventListener("click", (e) => {
+      if (!sidebar.classList.contains("open")) return;
+      if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
+      sidebar.classList.remove("open");
+      sidebarToggle.setAttribute("aria-expanded", "false");
+    });
   }
 
   const logoutBtn = qs("#logout-btn");
-  if (logoutBtn) logoutBtn.addEventListener("click", async () => { try { if (sb) await sb.auth.signOut(); } catch(e){} sessionStorage.removeItem('eRJ_user'); window.location.href = 'index.html'; });
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try { if (sb) await sb.auth.signOut(); } catch(e) { console.warn(e); }
+      sessionStorage.removeItem('eRJ_user');
+      window.location.href = 'login.html';
+    });
+  }
 
   bindUiActions();
   bindAutosave();
+
+  showPanel('menu');
 
   try {
     const reports = await loadReports();
