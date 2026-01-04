@@ -1,4 +1,4 @@
-/* app.js — kompletny plik aplikacji */
+/* app.js — kompletny plik aplikacji (mobilny, responsywny) */
 console.log('app.js loaded');
 
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
@@ -10,7 +10,7 @@ function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* Auth helpers */
+/* ---------- Auth ---------- */
 async function ensureAuthenticatedOrRedirect() {
   try {
     const { data } = await sb.auth.getSession();
@@ -31,7 +31,7 @@ async function getCurrentUid() {
   try { const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
 }
 
-/* DB mapping */
+/* ---------- DB mapping & CRUD ---------- */
 function mapDbReportToUi(r) {
   if (!r) return null;
   return {
@@ -41,7 +41,6 @@ function mapDbReportToUi(r) {
   };
 }
 
-/* CRUD */
 async function loadReports() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return [];
@@ -114,7 +113,7 @@ async function updateRow(table, id, fields) {
   return data;
 }
 
-/* render helpers */
+/* ---------- Render helpers (data-label added) ---------- */
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
   if (!label) return;
@@ -123,28 +122,42 @@ function updateStatusLabel(report) {
   else if (report.status === "handed_over") label.textContent = "Status: Przekazana do przejęcia";
   else label.textContent = "Status: W trakcie prowadzenia";
 }
+
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
   if (locoTbody) locoTbody.innerHTML = "";
   if (wagonTbody) wagonTbody.innerHTML = "";
   (report?.consist || []).forEach((l) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(l.mark)}</td><td>${escapeHtml(l.from_station)}</td><td>${escapeHtml(l.to_station)}</td>
-      <td class="action-group"><button class="btn small" data-role="edit" data-type="consist" data-id="${l.id}">Edytuj</button>
-      <button class="btn warning small" data-role="delete" data-type="consist" data-id="${l.id}">Usuń</button></td>`;
+    tr.innerHTML = `
+      <td data-label="Oznaczenie">${escapeHtml(l.mark)}</td>
+      <td data-label="Od">${escapeHtml(l.from_station)}</td>
+      <td data-label="Do">${escapeHtml(l.to_station)}</td>
+      <td data-label="Akcje" class="action-group">
+        <button class="btn small" data-role="edit" data-type="consist" data-id="${l.id}">Edytuj</button>
+        <button class="btn warning small" data-role="delete" data-type="consist" data-id="${l.id}">Usuń</button>
+      </td>`;
     if (l.type === 'loco') locoTbody.appendChild(tr); else wagonTbody.appendChild(tr);
   });
 }
+
 function renderCrew(report) {
   const tbody = qs("#crew-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.crew || []).forEach(c => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role)}</td><td>${escapeHtml(c.from_station)}</td><td>${escapeHtml(c.to_station)}</td>
-      <td class="action-group"><button class="btn small" data-role="edit" data-type="crew" data-id="${c.id}">Edytuj</button>
-      <button class="btn warning small" data-role="delete" data-type="crew" data-id="${c.id}">Usuń</button></td>`;
+    tr.innerHTML = `
+      <td data-label="Imię i nazwisko">${escapeHtml(c.name)}</td>
+      <td data-label="Funkcja">${escapeHtml(c.role)}</td>
+      <td data-label="Od">${escapeHtml(c.from_station)}</td>
+      <td data-label="Do">${escapeHtml(c.to_station)}</td>
+      <td data-label="Akcje" class="action-group">
+        <button class="btn small" data-role="edit" data-type="crew" data-id="${c.id}">Edytuj</button>
+        <button class="btn warning small" data-role="delete" data-type="crew" data-id="${c.id}">Usuń</button>
+      </td>`;
     tbody.appendChild(tr);
   });
 }
+
 function calculateDelayMinutes(planned, actual) {
   if (!planned || !actual) return null;
   const p = new Date(planned); const a = new Date(actual);
@@ -153,10 +166,11 @@ function calculateDelayMinutes(planned, actual) {
 }
 function formatDelayCell(delay) {
   if (delay === null) return "";
-  if (delay < 0) return `<span class="delay-early">${delay} min</span>`;
-  if (delay > 0) return `<span class="delay-late">+${delay} min</span>`;
-  return `<span class="delay-on-time">0 min</span>`;
+  if (delay < 0) return `${delay} min`;
+  if (delay > 0) return `+${delay} min`;
+  return `0 min`;
 }
+
 function renderRuns(report) {
   const tbody = qs("#run-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.runs || []).forEach(r => {
@@ -164,16 +178,25 @@ function renderRuns(report) {
     const delayDep = calculateDelayMinutes(r.planned_dep, r.actual_dep);
     const repDelay = (delayArr === null && delayDep === null) ? null : (delayArr === null ? delayDep : (delayDep === null ? delayArr : (Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep)));
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(r.station)}</td>
-      <td>${escapeHtml(r.planned_arr || "")}</td><td>${escapeHtml(r.actual_arr || "")}</td><td>${formatDelayCell(delayArr)}</td>
-      <td>${escapeHtml(r.planned_dep || "")}</td><td>${escapeHtml(r.actual_dep || "")}</td><td>${formatDelayCell(delayDep)}</td>
-      <td>${escapeHtml(r.delay_reason || "")}</td><td>${escapeHtml(r.orders || "")}</td>
-      <td class="action-group"><button class="btn small" data-role="edit" data-type="run" data-id="${r.id}">Edytuj</button>
-      <button class="btn warning small" data-role="delete" data-type="run" data-id="${r.id}">Usuń</button></td>`;
+    tr.innerHTML = `
+      <td data-label="Stacja">${escapeHtml(r.station)}</td>
+      <td data-label="Plan przyj.">${escapeHtml(r.planned_arr || "")}</td>
+      <td data-label="Rzecz. przyj.">${escapeHtml(r.actual_arr || "")}</td>
+      <td data-label="Odch. przyj.">${escapeHtml(formatDelayCell(delayArr))}</td>
+      <td data-label="Plan odj.">${escapeHtml(r.planned_dep || "")}</td>
+      <td data-label="Rzecz. odj.">${escapeHtml(r.actual_dep || "")}</td>
+      <td data-label="Odch. odj.">${escapeHtml(formatDelayCell(delayDep))}</td>
+      <td data-label="Powód">${escapeHtml(r.delay_reason || "")}</td>
+      <td data-label="Rozkazy">${escapeHtml(r.orders || "")}</td>
+      <td data-label="Akcje" class="action-group">
+        <button class="btn small" data-role="edit" data-type="run" data-id="${r.id}">Edytuj</button>
+        <button class="btn warning small" data-role="delete" data-type="run" data-id="${r.id}">Usuń</button>
+      </td>`;
     if (repDelay !== null && Math.abs(repDelay) > 20) tr.classList.add("row-critical-delay");
     tbody.appendChild(tr);
   });
 }
+
 function renderDispos(report) {
   const list = qs("#dispo-list"); if (!list) return; list.innerHTML = "";
   (report?.dispos || []).forEach(d => {
@@ -184,6 +207,7 @@ function renderDispos(report) {
     list.appendChild(li);
   });
 }
+
 function renderRemarks(report) {
   const list = qs("#remark-list"); if (!list) return; list.innerHTML = "";
   (report?.remarks || []).forEach(r => {
@@ -194,7 +218,7 @@ function renderRemarks(report) {
   });
 }
 
-/* modal system */
+/* ---------- Modal system ---------- */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -242,7 +266,7 @@ function trapTabKey(e) {
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* UI bindings */
+/* ---------- UI bindings ---------- */
 function bindUiActions() {
   const safe = (sel, cb) => { const el = qs(sel); if (el) el.addEventListener('click', cb); };
 
@@ -503,8 +527,11 @@ async function refreshLists() {
   const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
   (takeoverData || []).forEach(r => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(r.train_number || '')}</td><td>${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td><td>${escapeHtml(r.date || '')}</td>
-      <td><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
+    tr.innerHTML = `
+      <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+      <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+      <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
+      <td data-label="Akcja"><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
     takeoverTbody.appendChild(tr);
   });
 
@@ -517,8 +544,11 @@ async function refreshLists() {
     if (!r.date) return;
     if (r.date === dateToStr(today) || r.date === dateToStr(yesterday)) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${escapeHtml(r.train_number || '')}</td><td>${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td><td>${escapeHtml(r.date)}</td>
-        <td><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
+      tr.innerHTML = `
+        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Dzień">${escapeHtml(r.date)}</td>
+        <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
       checkTbody.appendChild(tr);
     }
   });
@@ -540,7 +570,11 @@ async function refreshLists() {
     }
     const tr = document.createElement("tr");
     if (delay !== null && Math.abs(delay) > 20) tr.classList.add("row-critical-delay");
-    tr.innerHTML = `<td>${escapeHtml(r.train_number || '')}</td><td>${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td><td>${escapeHtml(lr ? lr.station : '-')}</td><td>${delay === null ? '' : (delay>0?('+'+delay):delay)}</td>`;
+    tr.innerHTML = `
+      <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+      <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+      <td data-label="Ostatnia stacja">${escapeHtml(lr ? lr.station : '-')}</td>
+      <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):delay)}</td>`;
     dyspoTbody.appendChild(tr);
   }
 }
