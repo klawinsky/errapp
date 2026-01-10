@@ -1,4 +1,6 @@
-/* app.js — kompletny plik aplikacji z autocomplete stacji i poprawkami zapisu */
+/* app.js — kompletny plik aplikacji z autocomplete, obsługą Supabase,
+   poprawionym liczeniem opóźnień oraz automatycznym odświeżaniem DyspoPanel */
+
 console.log('app.js loaded');
 
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
@@ -220,7 +222,18 @@ async function addCrew(reportId, name, role, fromStation, toStation) {
 }
 async function addRun(reportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders) {
   if (!reportId || !sb) return null;
-  const { data, error } = await sb.from('runs').insert([{ report_id: reportId, station, planned_arr: plannedArr || null, actual_arr: actualArr || null, planned_dep: plannedDep || null, actual_dep: actualDep || null, delay_reason: delayReason || '', orders: orders || '' }]).select();
+  // Upewnij się, że daty są w ISO lub null
+  const payload = [{
+    report_id: reportId,
+    station,
+    planned_arr: plannedArr || null,
+    actual_arr: actualArr || null,
+    planned_dep: plannedDep || null,
+    actual_dep: actualDep || null,
+    delay_reason: delayReason || '',
+    orders: orders || ''
+  }];
+  const { data, error } = await sb.from('runs').insert(payload).select();
   if (error) console.error('addRun error', error);
   return data;
 }
@@ -294,12 +307,21 @@ function renderCrew(report) {
   });
 }
 
+// Poprawiona funkcja licząca opóźnienie w minutach
 function calculateDelayMinutes(planned, actual) {
-  if (!planned || !actual) return null;
-  const p = new Date(planned); const a = new Date(actual);
-  if (isNaN(p.getTime()) || isNaN(a.getTime())) return null;
-  return Math.round((a.getTime() - p.getTime()) / 60000);
+  if (!planned) return null;
+  const p = new Date(planned);
+  if (isNaN(p.getTime())) return null;
+  if (actual) {
+    const a = new Date(actual);
+    if (isNaN(a.getTime())) return null;
+    return Math.round((a.getTime() - p.getTime()) / 60000);
+  }
+  const now = new Date();
+  if (now.getTime() < p.getTime()) return null;
+  return Math.round((now.getTime() - p.getTime()) / 60000);
 }
+
 function formatDelayCell(delay) {
   if (delay === null) return "";
   if (delay < 0) return `${delay} min`;
@@ -478,13 +500,21 @@ function bindUiActions() {
       <label><span>Otrzymane rozkazy</span><textarea id="modal-run-orders"></textarea></label>
     `, async () => {
       const station = qs("#modal-run-station").value.trim();
-      const plannedArr = qs("#modal-run-planned-arr").value;
-      const actualArr = qs("#modal-run-actual-arr").value;
-      const plannedDep = qs("#modal-run-planned-dep").value;
-      const actualDep = qs("#modal-run-actual-dep").value;
+      const plannedArrRaw = qs("#modal-run-planned-arr").value;
+      const actualArrRaw = qs("#modal-run-actual-arr").value;
+      const plannedDepRaw = qs("#modal-run-planned-dep").value;
+      const actualDepRaw = qs("#modal-run-actual-dep").value;
       const delayReason = qs("#modal-run-delay-reason").value.trim();
       const orders = qs("#modal-run-orders").value.trim();
       if (!station) { alert("Podaj nazwę stacji."); return; }
+
+      // Konwersja datetime-local (bez strefy) do ISO (lokalnego)
+      const toIso = (v) => v ? new Date(v).toISOString() : null;
+      const plannedArr = toIso(plannedArrRaw);
+      const actualArr = toIso(actualArrRaw);
+      const plannedDep = toIso(plannedDepRaw);
+      const actualDep = toIso(actualDepRaw);
+
       await addRun(currentReportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders);
       const report = await getReportById(currentReportId);
       loadReportIntoForm(report, false);
@@ -576,24 +606,29 @@ function bindUiActions() {
               <div class="autocomplete-list hidden" id="list-modal-run-station" role="listbox"></div>
             </div>
           </label>
-          <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" value="${escapeAttr(plannedArrVal)}" /></label>
-          <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" value="${escapeAttr(actualArrVal)}" /></label>
-          <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" value="${escapeAttr(plannedDepVal)}" /></label>
-          <label><span>Rzeczywisty odjazd</span><input id="modal-run-actual-dep" type="datetime-local" value="${escapeAttr(actualDepVal)}" /></label>
+          <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" value="${escapeAttr(plannedArrVal ? plannedArrVal.slice(0,16) : '')}" /></label>
+          <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" value="${escapeAttr(actualArrVal ? actualArrVal.slice(0,16) : '')}" /></label>
+          <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" value="${escapeAttr(plannedDepVal ? plannedDepVal.slice(0,16) : '')}" /></label>
+          <label><span>Rzeczywisty odjazd</span><input id="modal-run-actual-dep" type="datetime-local" value="${escapeAttr(actualDepVal ? actualDepVal.slice(0,16) : '')}" /></label>
           <label><span>Powód opóźnienia</span><input id="modal-run-delay-reason" type="text" value="${escapeAttr(delayReasonVal)}" /></label>
           <label><span>Otrzymane rozkazy</span><textarea id="modal-run-orders">${escapeAttr(ordersVal)}</textarea></label>
         `, async () => {
           const station = qs("#modal-run-station").value.trim();
-          const plannedArr = qs("#modal-run-planned-arr").value;
-          const actualArr = qs("#modal-run-actual-arr").value;
-          const plannedDep = qs("#modal-run-planned-dep").value;
-          const actualDep = qs("#modal-run-actual-dep").value;
+          const plannedArrRaw = qs("#modal-run-planned-arr").value;
+          const actualArrRaw = qs("#modal-run-actual-arr").value;
+          const plannedDepRaw = qs("#modal-run-planned-dep").value;
+          const actualDepRaw = qs("#modal-run-actual-dep").value;
           const delayReason = qs("#modal-run-delay-reason").value.trim();
           const orders = qs("#modal-run-orders").value.trim();
           if (!station) { alert("Podaj nazwę stacji."); return; }
+
+          const toIso = (v) => v ? new Date(v).toISOString() : null;
           await updateRow('runs', id, {
-            station, planned_arr: plannedArr || null, actual_arr: actualArr || null,
-            planned_dep: plannedDep || null, actual_dep: actualDep || null,
+            station,
+            planned_arr: toIso(plannedArrRaw),
+            actual_arr: toIso(actualArrRaw),
+            planned_dep: toIso(plannedDepRaw),
+            actual_dep: toIso(actualDepRaw),
             delay_reason: delayReason, orders
           });
           const report = await getReportById(currentReportId);
@@ -723,60 +758,81 @@ async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
 
-  const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
-  if (tErr) console.error('refreshLists takeover error', tErr);
-  const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
-  (takeoverData || []).forEach(r => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-      <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-      <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
-      <td data-label="Akcja"><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
-    takeoverTbody.appendChild(tr);
-  });
-
-  const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
-  const dateToStr = d => d.toISOString().slice(0,10);
-  const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('created_at', { ascending: false });
-  if (aErr) console.error('refreshLists allReports error', aErr);
-  const checkTbody = qs("#check-table tbody"); if (checkTbody) checkTbody.innerHTML = "";
-  (allReports || []).forEach(r => {
-    if (!r.date) return;
-    if (r.date === dateToStr(today) || r.date === dateToStr(yesterday)) {
+  try {
+    const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
+    if (tErr) console.error('refreshLists takeover error', tErr);
+    const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
+    (takeoverData || []).forEach(r => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
         <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-        <td data-label="Dzień">${escapeHtml(r.date)}</td>
-        <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
-      checkTbody.appendChild(tr);
-    }
-  });
+        <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
+        <td data-label="Akcja"><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
+      takeoverTbody.appendChild(tr);
+    });
 
-  const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
-  if (arErr) console.error('refreshLists activeReports error', arErr);
-  const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
-  for (const r of (activeReports || [])) {
-    const { data: lastRun } = await sb.from('runs').select('*').eq('report_id', r.id).order('planned_arr', { ascending: false }).limit(1);
-    const lr = (lastRun && lastRun[0]) || null;
-    let delay = null;
-    if (lr) {
-      const delayArr = calculateDelayMinutes(lr.planned_arr, lr.actual_arr);
-      const delayDep = calculateDelayMinutes(lr.planned_dep, lr.actual_dep);
-      if (delayArr === null && delayDep === null) delay = null;
-      else if (delayArr === null) delay = delayDep;
-      else if (delayDep === null) delay = delayArr;
-      else delay = Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep;
+    const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
+    const dateToStr = d => d.toISOString().slice(0,10);
+    const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('created_at', { ascending: false });
+    if (aErr) console.error('refreshLists allReports error', aErr);
+    const checkTbody = qs("#check-table tbody"); if (checkTbody) checkTbody.innerHTML = "";
+    (allReports || []).forEach(r => {
+      if (!r.date) return;
+      if (r.date === dateToStr(today) || r.date === dateToStr(yesterday)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+          <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+          <td data-label="Dzień">${escapeHtml(r.date)}</td>
+          <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
+        checkTbody.appendChild(tr);
+      }
+    });
+
+    const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
+    if (arErr) console.error('refreshLists activeReports error', arErr);
+    const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
+
+    for (const r of (activeReports || [])) {
+      // Pobierz ostatnie wpisy runs dla raportu — najpierw spróbuj pobrać ostatni wpis z actual, jeśli brak to ostatni planned
+      let lr = null;
+      try {
+        // najpierw spróbuj pobrać ostatni run z actual_arr (najnowszy actual)
+        const { data: runsActual, error: raErr } = await sb.from('runs').select('*').eq('report_id', r.id).not('actual_arr', 'is', null).order('actual_arr', { ascending: false }).limit(1);
+        if (raErr) console.warn('runsActual error', raErr);
+        if (runsActual && runsActual.length) lr = runsActual[0];
+        else {
+          // jeśli brak actual, pobierz ostatni planned
+          const { data: runsPlanned, error: rpErr } = await sb.from('runs').select('*').eq('report_id', r.id).order('planned_arr', { ascending: false }).limit(1);
+          if (rpErr) console.warn('runsPlanned error', rpErr);
+          if (runsPlanned && runsPlanned.length) lr = runsPlanned[0];
+        }
+      } catch (e) {
+        console.error('refreshLists lastRun fetch exception', e);
+      }
+
+      let delay = null;
+      if (lr) {
+        const delayArr = calculateDelayMinutes(lr.planned_arr, lr.actual_arr);
+        const delayDep = calculateDelayMinutes(lr.planned_dep, lr.actual_dep);
+        if (delayArr === null && delayDep === null) delay = null;
+        else if (delayArr === null) delay = delayDep;
+        else if (delayDep === null) delay = delayArr;
+        else delay = Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep;
+      }
+
+      const tr = document.createElement("tr");
+      if (delay !== null && Math.abs(delay) > 20) tr.classList.add("row-critical-delay");
+      tr.innerHTML = `
+        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Ostatnia stacja">${escapeHtml(lr ? lr.station : '-')}</td>
+        <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):String(delay))}</td>`;
+      dyspoTbody.appendChild(tr);
     }
-    const tr = document.createElement("tr");
-    if (delay !== null && Math.abs(delay) > 20) tr.classList.add("row-critical-delay");
-    tr.innerHTML = `
-      <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-      <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-      <td data-label="Ostatnia stacja">${escapeHtml(lr ? lr.station : '-')}</td>
-      <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):delay)}</td>`;
-    dyspoTbody.appendChild(tr);
+  } catch (e) {
+    console.error('refreshLists outer error', e);
   }
 }
 
@@ -907,19 +963,106 @@ function openPrintWindow(report) {
   win.document.open(); win.document.write(html); win.document.close();
 }
 
-/* init */
-async function initApp() {
-  const ok = await ensureAuthenticatedOrRedirect();
-  if (!ok) return;
+/* ---------- DyspoPanel auto-refresh (co 3 minuty) ---------- */
 
-  await initStations();
-  const fromInput = qs('#general-from');
-  const toInput = qs('#general-to');
-  const fromList = qs('#list-general-from');
-  const toList = qs('#list-general-to');
-  if (fromInput && fromList) attachStationAutocomplete(fromInput, fromList);
-  if (toInput && toList) attachStationAutocomplete(toInput, toList);
+let dyspoRefreshIntervalMs = 3 * 60 * 1000; // 3 minuty
+let dyspoRefreshTimer = null;
+let isRefreshingDyspo = false;
 
+function ensureDyspoUiElements() {
+  const panel = document.getElementById('panel-dyspo');
+  if (!panel) return;
+
+  if (!document.getElementById('dyspo-last-updated')) {
+    const header = panel.querySelector('.panel-header');
+    if (header) {
+      const info = document.createElement('div');
+      info.id = 'dyspo-last-updated';
+      info.className = 'muted';
+      info.style.marginLeft = '12px';
+      info.style.fontSize = '13px';
+      header.appendChild(info);
+    }
+  }
+
+  const refreshBtnId = 'dyspo-manual-refresh';
+  if (!document.getElementById(refreshBtnId)) {
+    const header = panel.querySelector('.panel-header .panel-actions');
+    if (header) {
+      const btn = document.createElement('button');
+      btn.id = refreshBtnId;
+      btn.className = 'btn small';
+      btn.textContent = 'Odśwież teraz';
+      btn.addEventListener('click', () => {
+        triggerDyspoRefresh(true);
+      });
+      header.appendChild(btn);
+    }
+  }
+}
+
+function setDyspoLastUpdated(ts = null) {
+  const el = document.getElementById('dyspo-last-updated');
+  if (!el) return;
+  if (!ts) {
+    el.textContent = '';
+    return;
+  }
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  el.textContent = `Ostatnie odświeżenie: ${hh}:${mm}:${ss}`;
+}
+
+async function triggerDyspoRefresh(force = false) {
+  if (isRefreshingDyspo && !force) return;
+  isRefreshingDyspo = true;
+  try {
+    if (typeof refreshLists === 'function') {
+      await refreshLists();
+      setDyspoLastUpdated(Date.now());
+    } else {
+      console.warn('triggerDyspoRefresh: refreshLists() nieznane');
+    }
+  } catch (e) {
+    console.error('triggerDyspoRefresh error', e);
+  } finally {
+    isRefreshingDyspo = false;
+  }
+}
+
+function startDyspoAutoRefresh() {
+  stopDyspoAutoRefresh();
+  triggerDyspoRefresh();
+  dyspoRefreshTimer = setInterval(() => {
+    if (document.hidden) return;
+    triggerDyspoRefresh();
+  }, dyspoRefreshIntervalMs);
+}
+
+function stopDyspoAutoRefresh() {
+  if (dyspoRefreshTimer) {
+    clearInterval(dyspoRefreshTimer);
+    dyspoRefreshTimer = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopDyspoAutoRefresh();
+  } else {
+    startDyspoAutoRefresh();
+  }
+});
+
+function initDyspoAutoRefreshIntegration() {
+  ensureDyspoUiElements();
+  startDyspoAutoRefresh();
+}
+
+/* ---------- Init and helpers ---------- */
+function bindInitialUi() {
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
   navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
 
@@ -949,9 +1092,23 @@ async function initApp() {
       window.location.href = 'login.html';
     });
   }
+}
+
+async function initApp() {
+  const ok = await ensureAuthenticatedOrRedirect();
+  if (!ok) return;
+
+  await initStations();
+  const fromInput = qs('#general-from');
+  const toInput = qs('#general-to');
+  const fromList = qs('#list-general-from');
+  const toList = qs('#list-general-to');
+  if (fromInput && fromList) attachStationAutocomplete(fromInput, fromList);
+  if (toInput && toList) attachStationAutocomplete(toInput, toList);
 
   bindUiActions();
   bindAutosave();
+  bindInitialUi();
 
   showPanel('menu');
 
@@ -964,6 +1121,11 @@ async function initApp() {
     }
     refreshLists();
   } catch (e) { console.error('initApp load error', e); }
+
+  // Integracja Dyspo auto-refresh po inicjalizacji
+  setTimeout(() => {
+    try { initDyspoAutoRefreshIntegration(); } catch(e){ console.error('initDyspoAutoRefreshIntegration error', e); }
+  }, 800);
 }
 
 function showPanel(name) {
@@ -973,6 +1135,15 @@ function showPanel(name) {
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
+/* Service worker update handling (dodatkowe zabezpieczenie) */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('Service worker controller changed — reload');
+    window.location.reload();
+  });
+}
+
+/* Start */
 document.addEventListener('DOMContentLoaded', () => {
   initApp().catch(e => console.error('initApp error', e));
 });
