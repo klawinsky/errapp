@@ -4,7 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>eRegioJet — Aplikacja</title>
-  <link rel="stylesheet" href="style.css">
+
+  <!-- PWA manifest and theme -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0b74de">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div id="app" class="app">
@@ -42,6 +53,7 @@
       </aside>
 
       <main class="main" id="main">
+        <!-- MENU -->
         <section id="panel-menu" class="panel">
           <div class="panel-header">
             <h2>Menu</h2>
@@ -90,6 +102,7 @@
           </div>
         </section>
 
+        <!-- HANDLE TRAIN -->
         <section id="panel-handle-train" class="panel" hidden>
           <div class="panel-header">
             <h2>Obsłuż pociąg — Raport z jazdy</h2>
@@ -172,6 +185,7 @@
           </div>
         </section>
 
+        <!-- TAKEOVER -->
         <section id="panel-takeover" class="panel" hidden>
           <div class="panel-header">
             <h2>Przejmij pociąg</h2>
@@ -183,6 +197,7 @@
           </div>
         </section>
 
+        <!-- CHECK -->
         <section id="panel-check" class="panel" hidden>
           <div class="panel-header">
             <h2>Sprawdź pociąg</h2>
@@ -194,6 +209,7 @@
           </div>
         </section>
 
+        <!-- DYSPO -->
         <section id="panel-dyspo" class="panel" hidden>
           <div class="panel-header">
             <h2>DyspoPanel</h2>
@@ -207,6 +223,7 @@
       </main>
     </div>
 
+    <!-- Modale i confirm -->
     <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header class="modal-header"><h3 id="modal-title"></h3><button id="modal-close" class="icon-btn" aria-label="Zamknij modal">✕</button></header>
@@ -227,6 +244,8 @@
     </nav>
   </div>
 
+  <button id="install-btn" style="display:none;position:fixed;right:12px;bottom:84px;z-index:90" class="btn">Dodaj na ekran główny</button>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
   <script>
     const SUPABASE_URL = 'https://shqumvbmhcbeynrxozal.supabase.co';
@@ -234,6 +253,41 @@
     try { window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e){ console.error(e); }
   </script>
 
-  <script src="app.js" defer></script>
+  <script src="/app.js" defer></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').then(reg => {
+          console.log('Service worker zarejestrowany', reg);
+        }).catch(err => console.warn('Service worker error', err));
+      });
+    }
+
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const btn = document.getElementById('install-btn');
+      if (btn) {
+        btn.style.display = 'inline-block';
+        btn.addEventListener('click', async () => {
+          btn.style.display = 'none';
+          deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          console.log('Install choice', choice);
+          deferredPrompt = null;
+        });
+      }
+    });
+
+    function isStandalone() {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    }
+    if (isStandalone()) {
+      document.documentElement.classList.add('standalone');
+      console.log('Uruchomiono w trybie standalone');
+    }
+  </script>
 </body>
 </html>
