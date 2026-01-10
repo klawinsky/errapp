@@ -59,7 +59,7 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
 /* Autocomplete */
 .autocomplete{position:relative}
 .autocomplete-list{position:absolute;left:0;right:0;top:100%;z-index:80;background:#fff;border:1px solid #e6eefc;border-radius:8px;max-height:260px;overflow:auto;box-shadow:0 6px 18px rgba(2,6,23,0.12);margin-top:6px}
-.autocomplete-list .item{padding:10px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:14px}
+.autocomplete-list .item{padding:10px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:14px;display:flex;flex-direction:column}
 .autocomplete-list .item:last-child{border-bottom:0}
 .autocomplete-list .item:hover,.autocomplete-list .item.active{background:#eef6ff}
 .autocomplete .no-results{padding:10px 12px;color:var(--muted);font-size:13px}
@@ -119,3 +119,8 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
 .hidden{display:none !important}
 .action-group{display:flex;gap:6px;flex-wrap:wrap}
 .status{font-size:13px;color:var(--muted)}
+
+/* PWA standalone adjustments */
+html.standalone .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; }
+html.standalone body { padding-top: 56px; }
+#install-btn { display: none; }
