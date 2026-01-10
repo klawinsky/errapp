@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>eRegioJet — Aplikacja</title>
+  <title>eRegioJet — Raporty pociągów</title>
 
   <!-- PWA manifest and theme -->
   <link rel="manifest" href="/manifest.json">
@@ -22,8 +22,10 @@
     <header class="topbar">
       <div class="topbar-left">
         <button id="sidebar-toggle" class="icon-btn" aria-label="Otwórz menu">☰</button>
-        <div class="brand">
-          <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
+        <div class="brand" role="img" aria-label="eRegioJet">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/></svg>
+          </div>
           <div class="brand-text">
             <div class="brand-title">eRegioJet</div>
             <div class="brand-sub">Raporty pociągów</div>
@@ -32,14 +34,14 @@
       </div>
 
       <div class="topbar-right" id="auth-area">
-        <div id="user-inline" class="user-inline">
+        <div id="user-inline" class="user-inline" aria-live="polite">
           <span id="user-email-display" class="user-email"></span>
           <button id="logout-btn" class="btn ghost">Wyloguj</button>
         </div>
       </div>
     </header>
 
-    <div class="layout">
+    <div class="layout" id="layout">
       <aside id="sidebar" class="sidebar" aria-label="Główne menu">
         <nav>
           <ul>
@@ -90,7 +92,7 @@
 
           <div class="card">
             <h3>Przydatne linki</h3>
-            <div class="links-grid">
+            <div class="links-grid" role="list">
               <a class="ext-link" href="https://portalpasazera.pl/" target="_blank" rel="noopener noreferrer">Portal Pasażera (PL)</a>
               <a class="ext-link" href="https://drive.google.com/drive/folders/1SvFS-1RUndidAWOB0oag5FrO0VDyzIxL?usp=drive_link" target="_blank" rel="noopener noreferrer">Rozkłady Jazdy</a>
               <a class="ext-link" href="https://docs.google.com/forms/d/e/1FAIpQLSdFyt53NYnKrlSawvu1K9TiL57KP3DiPmhsweFCVKt1ZLA3PQ/viewform" target="_blank" rel="noopener noreferrer">Start / Koniec Pracy</a>
@@ -288,6 +290,33 @@
       document.documentElement.classList.add('standalone');
       console.log('Uruchomiono w trybie standalone');
     }
+
+    // Sidebar toggle for small screens
+    document.addEventListener('DOMContentLoaded', () => {
+      const sidebar = document.getElementById('sidebar');
+      const toggle = document.getElementById('sidebar-toggle');
+      if (toggle && sidebar) {
+        toggle.addEventListener('click', () => {
+          sidebar.classList.toggle('open');
+        });
+      }
+
+      // Basic nav switching
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const panel = btn.getAttribute('data-panel');
+          document.querySelectorAll('.panel').forEach(p => p.hidden = true);
+          const el = document.getElementById(`panel-${panel}`);
+          if (el) el.hidden = false;
+          // close sidebar on mobile
+          if (window.matchMedia && window.matchMedia('(max-width:900px)').matches) {
+            sidebar.classList.remove('open');
+          }
+        });
+      });
+    });
   </script>
 </body>
 </html>
