@@ -77,7 +77,6 @@
             </article>
           </div>
 
-          <!-- Sekcja z linkami zewnętrznymi -->
           <div class="card">
             <h3>Przydatne linki</h3>
             <div class="links-grid">
@@ -107,8 +106,21 @@
             <div class="form-grid">
               <label><span>Numer pociągu</span><input id="general-train-number" type="text" inputmode="numeric" /></label>
               <label><span>Dzień kursowania</span><input id="general-date" type="date" /></label>
-              <label><span>Stacja od</span><input id="general-from" type="text" /></label>
-              <label><span>Stacja do</span><input id="general-to" type="text" /></label>
+
+              <!-- Autocomplete fields -->
+              <label><span>Stacja od</span>
+                <div class="autocomplete">
+                  <input id="general-from" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" />
+                  <div class="autocomplete-list hidden" id="list-general-from" role="listbox"></div>
+                </div>
+              </label>
+
+              <label><span>Stacja do</span>
+                <div class="autocomplete">
+                  <input id="general-to" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" />
+                  <div class="autocomplete-list hidden" id="list-general-to" role="listbox"></div>
+                </div>
+              </label>
             </div>
           </div>
 
