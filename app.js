@@ -1,4 +1,4 @@
-/* app.js — kompletny plik aplikacji z autocomplete stacji */
+/* app.js — kompletny plik aplikacji z autocomplete stacji i poprawkami zapisu */
 console.log('app.js loaded');
 
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
@@ -19,6 +19,7 @@ async function initStations() {
     if (!res.ok) throw new Error('stations.json fetch failed');
     STATIONS = await res.json();
     STATIONS.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    console.log('Stations loaded:', STATIONS.length);
   } catch (e) {
     console.warn('Nie udało się wczytać stations.json', e);
     STATIONS = [];
@@ -173,11 +174,45 @@ async function createEmptyReport() {
   if (error) { console.error('createEmptyReport error', error); return null; }
   return mapDbReportToUi(data);
 }
+
+// Bezpieczna wersja updateReportFields — filtruje pola i loguje szczegóły błędu
 async function updateReportFields(id, fields) {
-  if (!id || !sb) { console.error('updateReportFields: missing id or sb'); return null; }
-  const { data, error } = await sb.from('reports').update(fields).eq('id', id).select().single();
-  if (error) { console.error('updateReportFields error', error); return null; }
-  return mapDbReportToUi(data);
+  if (!id || !sb) {
+    console.error('updateReportFields: missing id or supabase client');
+    return null;
+  }
+
+  try {
+    // Lista pól, które na pewno istnieją w tabeli reports.
+    // Jeśli masz dodatkowe kolumny (np. from_code, to_code) dodaj je tutaj.
+    const allowed = ['train_number', 'date', 'from_station', 'to_station', 'status'];
+
+    // Zbuduj payload tylko z dozwolonych pól
+    const payload = {};
+    Object.keys(fields || {}).forEach(key => {
+      if (allowed.includes(key)) payload[key] = fields[key];
+    });
+
+    // Jeśli payload jest pusty, nic nie wysyłamy
+    if (Object.keys(payload).length === 0) {
+      console.warn('updateReportFields: no allowed fields to update', fields);
+      return null;
+    }
+
+    const { data, error, status } = await sb.from('reports').update(payload).eq('id', id).select().single();
+
+    if (error) {
+      // Loguj szczegóły błędu — status i cały obiekt error
+      try { console.error('updateReportFields error', { status, error: JSON.parse(JSON.stringify(error)) }); }
+      catch(e) { console.error('updateReportFields error (raw)', status, error); }
+      return null;
+    }
+
+    return mapDbReportToUi(data);
+  } catch (ex) {
+    console.error('updateReportFields exception', ex);
+    return null;
+  }
 }
 
 /* related records */
@@ -366,7 +401,7 @@ function closeModal() {
 if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeModal);
 if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
 if (modalSaveBtn) modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
-if (modalBackdrop) modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+if (modalBackdrop) modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
 function escCloseModal(e) { if (e.key === "Escape") closeModal(); }
 function trapTabKey(e) {
   if (e.key !== "Tab") return;
@@ -556,7 +591,7 @@ function bindUiActions() {
     }
     const fromCode = qs('#general-from')?.dataset.stationCode || null;
     const toCode = qs('#general-to')?.dataset.stationCode || null;
-    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to, from_code: fromCode, to_code: toCode });
+    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
     alert("Raport zapisany.");
     const report = await getReportById(currentReportId);
     loadReportIntoForm(report, false);
@@ -700,16 +735,41 @@ async function readReportFromForm() {
   const to = qs("#general-to")?.value.trim() || "";
   return { general: { trainNumber: train, date, from, to } };
 }
+
 function loadReportIntoForm(report, isReadOnly) {
   if (!report) return;
   currentReportId = report.id;
   readOnlyMode = !!isReadOnly;
-  const elTrain = qs("#general-train-number"); if (elTrain) elTrain.value = report.general.trainNumber || "";
-  const elDate = qs("#general-date"); if (elDate) elDate.value = report.general.date || "";
-  const elFrom = qs("#general-from"); if (elFrom) elFrom.value = report.general.from || "";
-  const elTo = qs("#general-to"); if (elTo) elTo.value = report.general.to || "";
-  renderConsist(report); renderCrew(report); renderRuns(report); renderDispos(report); renderRemarks(report);
+
+  // Ustawiaj wartości tylko jeśli pole NIE jest aktualnie fokusowane
+  const elTrain = qs("#general-train-number");
+  if (elTrain && document.activeElement !== elTrain) elTrain.value = report.general.trainNumber || "";
+
+  const elDate = qs("#general-date");
+  if (elDate && document.activeElement !== elDate) elDate.value = report.general.date || "";
+
+  const elFrom = qs("#general-from");
+  if (elFrom && document.activeElement !== elFrom) {
+    elFrom.value = report.general.from || "";
+    if (report.from_code) elFrom.dataset.stationCode = report.from_code;
+    else if (!report.from_code) delete elFrom.dataset.stationCode;
+  }
+
+  const elTo = qs("#general-to");
+  if (elTo && document.activeElement !== elTo) {
+    elTo.value = report.general.to || "";
+    if (report.to_code) elTo.dataset.stationCode = report.to_code;
+    else if (!report.to_code) delete elTo.dataset.stationCode;
+  }
+
+  // Renderuj listy i tabele
+  renderConsist(report);
+  renderCrew(report);
+  renderRuns(report);
+  renderDispos(report);
+  renderRemarks(report);
   updateStatusLabel(report);
+
   const disabled = readOnlyMode || report.status === "finished";
   ["#add-loco-btn","#add-wagon-btn","#add-crew-btn","#add-run-btn","#add-dispo-btn","#add-remark-btn","#finish-btn","#handover-btn","#save-report-btn"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
@@ -732,10 +792,42 @@ function bindAutosave() {
         const r = await readReportFromForm();
         const fromCode = qs('#general-from')?.dataset.stationCode || null;
         const toCode = qs('#general-to')?.dataset.stationCode || null;
-        await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to, from_code: fromCode, to_code: toCode });
-        const report = await getReportById(currentReportId);
-        loadReportIntoForm(report, false);
-        refreshLists();
+
+        // Zapisz tylko dozwolone pola (updateReportFields je przefiltruje)
+        await updateReportFields(currentReportId, {
+          train_number: r.general.trainNumber,
+          date: r.general.date || null,
+          from_station: r.general.from,
+          to_station: r.general.to,
+          // from_code/to_code zapisujemy tylko jeśli masz kolumny w DB i dodałeś je do allowed
+          // from_code: fromCode,
+          // to_code: toCode
+        });
+
+        // Pobierz raport i zaktualizuj tylko pola, które NIE SĄ aktualnie fokusowane
+        try {
+          const report = await getReportById(currentReportId);
+          if (report) {
+            if (document.activeElement !== qs("#general-train-number")) qs("#general-train-number").value = report.general.trainNumber || "";
+            if (document.activeElement !== qs("#general-date")) qs("#general-date").value = report.general.date || "";
+            if (document.activeElement !== qs("#general-from")) {
+              qs("#general-from").value = report.general.from || "";
+              if (report.from_code) qs("#general-from").dataset.stationCode = report.from_code;
+              else delete qs("#general-from").dataset.stationCode;
+            }
+            if (document.activeElement !== qs("#general-to")) {
+              qs("#general-to").value = report.general.to || "";
+              if (report.to_code) qs("#general-to").dataset.stationCode = report.to_code;
+              else delete qs("#general-to").dataset.stationCode;
+            }
+            // odśwież tabele i listy bez brutalnego nadpisywania pól
+            renderConsist(report); renderCrew(report); renderRuns(report); renderDispos(report); renderRemarks(report);
+            updateStatusLabel(report);
+          }
+          refreshLists();
+        } catch (e) {
+          console.warn('Autosave post-update refresh error', e);
+        }
       }, 700);
     });
   });
