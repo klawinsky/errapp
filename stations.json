@@ -1,0 +1,17 @@
+[
+  {"code":"WWO","name":"Warszawa Wschodnia"},
+  {"code":"WAC","name":"Warszawa Centralna"},
+  {"code":"KGB","name":"Kraków Główny"},
+  {"code":"PRA","name":"Kraków Prokocim PrA"},
+  {"code":"WAZ","name":"Warszawa Zachodnia"},
+  {"code":"KPL","name":"Kraków Płaszów"},
+  {"code":"GDY","name":"Gdynia Główna"},
+  {"code":"GDP","name":"Gdynia Port"},
+  {"code":"CHI","name":"Chałupki"},
+  {"code":"ZAW","name":"Zawiercie"},
+  {"code":"WAP","name":"Warszawa Praga"},
+  {"code":"GLI","name":"Gliwice"},
+  {"code":"TGA","name":"Tarnowskie Góry"},
+  {"code":"AIR","name":"Pyrzowice Lotnisko"},
+  {"code":"RAC","name":"Racibórz"}
+]
