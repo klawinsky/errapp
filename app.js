@@ -183,31 +183,21 @@ async function updateReportFields(id, fields) {
   }
 
   try {
-    // Lista pól, które na pewno istnieją w tabeli reports.
-    // Jeśli masz dodatkowe kolumny (np. from_code, to_code) dodaj je tutaj.
     const allowed = ['train_number', 'date', 'from_station', 'to_station', 'status'];
-
-    // Zbuduj payload tylko z dozwolonych pól
     const payload = {};
     Object.keys(fields || {}).forEach(key => {
       if (allowed.includes(key)) payload[key] = fields[key];
     });
-
-    // Jeśli payload jest pusty, nic nie wysyłamy
     if (Object.keys(payload).length === 0) {
       console.warn('updateReportFields: no allowed fields to update', fields);
       return null;
     }
-
     const { data, error, status } = await sb.from('reports').update(payload).eq('id', id).select().single();
-
     if (error) {
-      // Loguj szczegóły błędu — status i cały obiekt error
       try { console.error('updateReportFields error', { status, error: JSON.parse(JSON.stringify(error)) }); }
       catch(e) { console.error('updateReportFields error (raw)', status, error); }
       return null;
     }
-
     return mapDbReportToUi(data);
   } catch (ex) {
     console.error('updateReportFields exception', ex);
@@ -474,7 +464,12 @@ function bindUiActions() {
 
   safe('#add-run-btn', () => {
     openModal("Dodaj wpis jazdy", `
-      <label><span>Nazwa stacji</span><input id="modal-run-station" type="text" /></label>
+      <label><span>Nazwa stacji</span>
+        <div class="autocomplete">
+          <input id="modal-run-station" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" />
+          <div class="autocomplete-list hidden" id="list-modal-run-station" role="listbox"></div>
+        </div>
+      </label>
       <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" /></label>
       <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" /></label>
       <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" /></label>
@@ -495,6 +490,15 @@ function bindUiActions() {
       loadReportIntoForm(report, false);
       closeModal(); refreshLists();
     });
+
+    setTimeout(() => {
+      const modalStationInput = qs('#modal-run-station');
+      const modalStationList = qs('#list-modal-run-station');
+      if (modalStationInput && modalStationList) {
+        attachStationAutocomplete(modalStationInput, modalStationList);
+        modalStationInput.dispatchEvent(new Event('input'));
+      }
+    }, 250);
   });
 
   safe('#add-dispo-btn', () => {
@@ -555,7 +559,58 @@ function bindUiActions() {
       const table = (type === 'consist' ? 'consist' : type);
       const { data, error } = await sb.from(table).select('*').eq('id', id).single();
       if (error || !data) { alert('Błąd pobierania rekordu'); return; }
-      if (type === 'dispo') {
+
+      if (type === 'run') {
+        const stationVal = data.station || '';
+        const plannedArrVal = data.planned_arr || '';
+        const actualArrVal = data.actual_arr || '';
+        const plannedDepVal = data.planned_dep || '';
+        const actualDepVal = data.actual_dep || '';
+        const delayReasonVal = data.delay_reason || '';
+        const ordersVal = data.orders || '';
+
+        openModal("Edytuj wpis jazdy", `
+          <label><span>Nazwa stacji</span>
+            <div class="autocomplete">
+              <input id="modal-run-station" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" value="${escapeAttr(stationVal)}" />
+              <div class="autocomplete-list hidden" id="list-modal-run-station" role="listbox"></div>
+            </div>
+          </label>
+          <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" value="${escapeAttr(plannedArrVal)}" /></label>
+          <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" value="${escapeAttr(actualArrVal)}" /></label>
+          <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" value="${escapeAttr(plannedDepVal)}" /></label>
+          <label><span>Rzeczywisty odjazd</span><input id="modal-run-actual-dep" type="datetime-local" value="${escapeAttr(actualDepVal)}" /></label>
+          <label><span>Powód opóźnienia</span><input id="modal-run-delay-reason" type="text" value="${escapeAttr(delayReasonVal)}" /></label>
+          <label><span>Otrzymane rozkazy</span><textarea id="modal-run-orders">${escapeAttr(ordersVal)}</textarea></label>
+        `, async () => {
+          const station = qs("#modal-run-station").value.trim();
+          const plannedArr = qs("#modal-run-planned-arr").value;
+          const actualArr = qs("#modal-run-actual-arr").value;
+          const plannedDep = qs("#modal-run-planned-dep").value;
+          const actualDep = qs("#modal-run-actual-dep").value;
+          const delayReason = qs("#modal-run-delay-reason").value.trim();
+          const orders = qs("#modal-run-orders").value.trim();
+          if (!station) { alert("Podaj nazwę stacji."); return; }
+          await updateRow('runs', id, {
+            station, planned_arr: plannedArr || null, actual_arr: actualArr || null,
+            planned_dep: plannedDep || null, actual_dep: actualDep || null,
+            delay_reason: delayReason, orders
+          });
+          const report = await getReportById(currentReportId);
+          loadReportIntoForm(report, false);
+          closeModal(); refreshLists();
+        });
+
+        setTimeout(() => {
+          const modalStationInput = qs('#modal-run-station');
+          const modalStationList = qs('#list-modal-run-station');
+          if (modalStationInput && modalStationList) {
+            attachStationAutocomplete(modalStationInput, modalStationList);
+            modalStationInput.dispatchEvent(new Event('input'));
+          }
+        }, 250);
+
+      } else if (type === 'dispo') {
         openModal("Edytuj dyspozycję", `
           <label><span>Źródło</span><input id="modal-dispo-source" type="text" value="${escapeAttr(data.source)}" /></label>
           <label><span>Treść</span><textarea id="modal-dispo-text">${escapeAttr(data.text)}</textarea></label>
@@ -589,8 +644,6 @@ function bindUiActions() {
       if (!created) { alert('Błąd tworzenia raportu'); return; }
       currentReportId = created.id;
     }
-    const fromCode = qs('#general-from')?.dataset.stationCode || null;
-    const toCode = qs('#general-to')?.dataset.stationCode || null;
     await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
     alert("Raport zapisany.");
     const report = await getReportById(currentReportId);
@@ -741,7 +794,6 @@ function loadReportIntoForm(report, isReadOnly) {
   currentReportId = report.id;
   readOnlyMode = !!isReadOnly;
 
-  // Ustawiaj wartości tylko jeśli pole NIE jest aktualnie fokusowane
   const elTrain = qs("#general-train-number");
   if (elTrain && document.activeElement !== elTrain) elTrain.value = report.general.trainNumber || "";
 
@@ -762,7 +814,6 @@ function loadReportIntoForm(report, isReadOnly) {
     else if (!report.to_code) delete elTo.dataset.stationCode;
   }
 
-  // Renderuj listy i tabele
   renderConsist(report);
   renderCrew(report);
   renderRuns(report);
@@ -790,21 +841,13 @@ function bindAutosave() {
           currentReportId = created.id;
         }
         const r = await readReportFromForm();
-        const fromCode = qs('#general-from')?.dataset.stationCode || null;
-        const toCode = qs('#general-to')?.dataset.stationCode || null;
-
-        // Zapisz tylko dozwolone pola (updateReportFields je przefiltruje)
         await updateReportFields(currentReportId, {
           train_number: r.general.trainNumber,
           date: r.general.date || null,
           from_station: r.general.from,
-          to_station: r.general.to,
-          // from_code/to_code zapisujemy tylko jeśli masz kolumny w DB i dodałeś je do allowed
-          // from_code: fromCode,
-          // to_code: toCode
+          to_station: r.general.to
         });
 
-        // Pobierz raport i zaktualizuj tylko pola, które NIE SĄ aktualnie fokusowane
         try {
           const report = await getReportById(currentReportId);
           if (report) {
@@ -820,7 +863,6 @@ function bindAutosave() {
               if (report.to_code) qs("#general-to").dataset.stationCode = report.to_code;
               else delete qs("#general-to").dataset.stationCode;
             }
-            // odśwież tabele i listy bez brutalnego nadpisywania pól
             renderConsist(report); renderCrew(report); renderRuns(report); renderDispos(report); renderRemarks(report);
             updateStatusLabel(report);
           }
@@ -870,7 +912,6 @@ async function initApp() {
   const ok = await ensureAuthenticatedOrRedirect();
   if (!ok) return;
 
-  // load stations and attach autocomplete
   await initStations();
   const fromInput = qs('#general-from');
   const toInput = qs('#general-to');
