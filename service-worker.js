@@ -1,14 +1,12 @@
-const CACHE_NAME = 'eregiojet-v1';
+// service-worker.js — bezpieczny update + notify clients
+const CACHE_VERSION = 'v2'; // zwiększaj przy każdej zmianie
+const CACHE_NAME = `eregiojet-${CACHE_VERSION}`;
 const ASSETS = [
   '/',
   '/index.html',
   '/style.css',
   '/app.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-256.png',
-  '/icons/icon-384.png',
-  '/icons/icon-512.png'
+  '/manifest.json'
 ];
 
 // Instalacja i cache podstawowych zasobów
@@ -29,7 +27,7 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Strategia fetch: cache-first dla zasobów statycznych, fallback do network
+// Fetch: cache-first z runtime caching i fallbackem
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -38,17 +36,24 @@ self.addEventListener('fetch', event => {
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(networkRes => {
-        // runtime cache: zapisujemy kopię odpowiedzi (bez dużych zewnętrznych plików)
+        // runtime cache: zapisujemy kopię odpowiedzi
         return caches.open(CACHE_NAME).then(cache => {
-          try { cache.put(req, networkRes.clone()); } catch(e) {}
+          try { cache.put(req, networkRes.clone()); } catch (e) {}
           return networkRes;
         });
       }).catch(() => {
-        // fallback: jeśli to żądanie HTML, zwróć index.html z cache
         if (req.headers.get('accept') && req.headers.get('accept').includes('text/html')) {
           return caches.match('/index.html');
         }
       });
     })
   );
+});
+
+// Obsługa komunikatów z klienta (np. wymuś update)
+self.addEventListener('message', event => {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
