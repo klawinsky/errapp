@@ -51,6 +51,11 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
 .list{list-style:none;padding:0;margin:0}
 .list li{padding:8px;border-bottom:1px solid #f1f5f9}
 
+/* Links grid in menu */
+.links-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px}
+.ext-link{display:inline-block;padding:10px;border-radius:8px;background:#f4f6fb;color:#0b1220;text-decoration:none;font-weight:600;text-align:center}
+.ext-link:hover{background:#e8f0ff}
+
 /* Modal */
 .modal-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(11,18,32,0.45);z-index:60}
 .modal{width:720px;max-width:96%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(2,6,23,0.2)}
