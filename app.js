@@ -1,4 +1,4 @@
-/* app.js — kompletny plik aplikacji (mobilny, responsywny) */
+/* app.js — kompletny plik aplikacji z autocomplete stacji */
 console.log('app.js loaded');
 
 const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
@@ -9,6 +9,117 @@ function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 
 let currentReportId = null;
 let readOnlyMode = false;
+
+/* ---------- Stations autocomplete data & helpers ---------- */
+let STATIONS = [];
+
+async function initStations() {
+  try {
+    const res = await fetch('stations.json', { cache: "no-cache" });
+    if (!res.ok) throw new Error('stations.json fetch failed');
+    STATIONS = await res.json();
+    STATIONS.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  } catch (e) {
+    console.warn('Nie udało się wczytać stations.json', e);
+    STATIONS = [];
+  }
+}
+
+function findStations(query, limit = 30) {
+  if (!query) return STATIONS.slice(0, limit);
+  const q = query.trim().toLowerCase();
+  const pref = STATIONS.filter(s => (s.name||'').toLowerCase().startsWith(q) || (s.code||'').toLowerCase().startsWith(q));
+  if (pref.length >= limit) return pref.slice(0, limit);
+  const rest = STATIONS.filter(s => !pref.includes(s) && ((s.name||'').toLowerCase().includes(q) || (s.code||'').toLowerCase().includes(q)));
+  return pref.concat(rest).slice(0, limit);
+}
+
+function attachStationAutocomplete(inputEl, listEl) {
+  if (!inputEl || !listEl) return;
+  let focusedIndex = -1;
+  let currentItems = [];
+
+  function renderList(items) {
+    listEl.innerHTML = '';
+    if (!items || items.length === 0) {
+      const no = document.createElement('div'); no.className = 'no-results'; no.textContent = 'Brak wyników — wpisz nazwę ręcznie';
+      listEl.appendChild(no);
+      listEl.classList.remove('hidden');
+      currentItems = [];
+      focusedIndex = -1;
+      return;
+    }
+    items.forEach((s, idx) => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.setAttribute('role','option');
+      div.dataset.index = idx;
+      div.innerHTML = `<strong>${escapeHtml(s.name)}</strong><div style="font-size:12px;color:var(--muted)">${escapeHtml(s.code || '')}</div>`;
+      div.addEventListener('click', () => selectItem(idx));
+      listEl.appendChild(div);
+    });
+    listEl.classList.remove('hidden');
+    currentItems = items;
+    focusedIndex = -1;
+  }
+
+  function selectItem(idx) {
+    const s = currentItems[idx];
+    if (!s) return;
+    inputEl.value = s.name;
+    inputEl.dataset.stationCode = s.code || '';
+    hideList();
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function hideList() {
+    listEl.classList.add('hidden');
+    focusedIndex = -1;
+  }
+
+  function onInput() {
+    const q = inputEl.value || '';
+    const items = findStations(q, 30);
+    renderList(items);
+  }
+
+  function onKeyDown(e) {
+    if (listEl.classList.contains('hidden')) return;
+    const items = listEl.querySelectorAll('.item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIndex = Math.min(focusedIndex + 1, items.length - 1);
+      updateFocus(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIndex = Math.max(focusedIndex - 1, 0);
+      updateFocus(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (focusedIndex >= 0) selectItem(focusedIndex);
+      else hideList();
+    } else if (e.key === 'Escape') {
+      hideList();
+    }
+  }
+
+  function updateFocus(items) {
+    items.forEach((it, i) => it.classList.toggle('active', i === focusedIndex));
+    if (focusedIndex >= 0 && items[focusedIndex]) items[focusedIndex].scrollIntoView({block:'nearest'});
+  }
+
+  function onDocClick(e) {
+    if (e.target === inputEl || e.target.closest('.autocomplete') === inputEl.closest('.autocomplete')) return;
+    hideList();
+  }
+
+  inputEl.addEventListener('input', onInput);
+  inputEl.addEventListener('keydown', onKeyDown);
+  document.addEventListener('click', onDocClick);
+
+  return { hideList };
+}
 
 /* ---------- Auth ---------- */
 async function ensureAuthenticatedOrRedirect() {
@@ -443,7 +554,9 @@ function bindUiActions() {
       if (!created) { alert('Błąd tworzenia raportu'); return; }
       currentReportId = created.id;
     }
-    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
+    const fromCode = qs('#general-from')?.dataset.stationCode || null;
+    const toCode = qs('#general-to')?.dataset.stationCode || null;
+    await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to, from_code: fromCode, to_code: toCode });
     alert("Raport zapisany.");
     const report = await getReportById(currentReportId);
     loadReportIntoForm(report, false);
@@ -617,7 +730,9 @@ function bindAutosave() {
           currentReportId = created.id;
         }
         const r = await readReportFromForm();
-        await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to });
+        const fromCode = qs('#general-from')?.dataset.stationCode || null;
+        const toCode = qs('#general-to')?.dataset.stationCode || null;
+        await updateReportFields(currentReportId, { train_number: r.general.trainNumber, date: r.general.date || null, from_station: r.general.from, to_station: r.general.to, from_code: fromCode, to_code: toCode });
         const report = await getReportById(currentReportId);
         loadReportIntoForm(report, false);
         refreshLists();
@@ -662,6 +777,15 @@ function openPrintWindow(report) {
 async function initApp() {
   const ok = await ensureAuthenticatedOrRedirect();
   if (!ok) return;
+
+  // load stations and attach autocomplete
+  await initStations();
+  const fromInput = qs('#general-from');
+  const toInput = qs('#general-to');
+  const fromList = qs('#list-general-from');
+  const toList = qs('#list-general-to');
+  if (fromInput && fromList) attachStationAutocomplete(fromInput, fromList);
+  if (toInput && toList) attachStationAutocomplete(toInput, toList);
 
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
   navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
