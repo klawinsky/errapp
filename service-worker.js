@@ -1,15 +1,14 @@
-// service-worker.js — bezpieczny update + notify clients
-const CACHE_VERSION = 'v2'; // zwiększaj przy każdej zmianie
+// service-worker.js — cache versioning, runtime caching, safe update
+const CACHE_VERSION = 'v1';
 const CACHE_NAME = `eregiojet-${CACHE_VERSION}`;
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/manifest.json'
+  './',
+  'index.html',
+  'style.css',
+  'app.js',
+  'manifest.json'
 ];
 
-// Instalacja i cache podstawowych zasobów
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
@@ -17,7 +16,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Aktywacja i czyszczenie starych cache'y
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => Promise.all(
@@ -27,33 +25,42 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch: cache-first z runtime caching i fallbackem
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+
+  if (url.hostname.includes('supabase.co') || url.pathname.startsWith('/rest/v1') || url.pathname.startsWith('/rpc')) {
+    event.respondWith(fetch(req).catch(() => caches.match(req)));
+    return;
+  }
+
+  if (req.mode === 'navigate' || (req.headers.get('accept') && req.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(req).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
+        return res;
+      }).catch(() => caches.match('index.html'))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(networkRes => {
-        // runtime cache: zapisujemy kopię odpowiedzi
         return caches.open(CACHE_NAME).then(cache => {
           try { cache.put(req, networkRes.clone()); } catch (e) {}
           return networkRes;
         });
-      }).catch(() => {
-        if (req.headers.get('accept') && req.headers.get('accept').includes('text/html')) {
-          return caches.match('/index.html');
-        }
-      });
+      }).catch(() => {});
     })
   );
 });
 
-// Obsługa komunikatów z klienta (np. wymuś update)
 self.addEventListener('message', event => {
   if (!event.data) return;
-  if (event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
+  if (event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
