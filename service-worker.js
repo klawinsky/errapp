@@ -1,4 +1,4 @@
-// service-worker.js — cache versioning, runtime caching, safe update
+// service-worker.js — bezpieczne cache.put (pomija chrome-extension i inne nie-http)
 const CACHE_VERSION = 'v1';
 const CACHE_NAME = `eregiojet-${CACHE_VERSION}`;
 const ASSETS = [
@@ -31,30 +31,44 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(req.url);
 
+  // Bypass caching for Supabase API calls (keep fresh)
   if (url.hostname.includes('supabase.co') || url.pathname.startsWith('/rest/v1') || url.pathname.startsWith('/rpc')) {
     event.respondWith(fetch(req).catch(() => caches.match(req)));
     return;
   }
 
+  // For navigation requests (HTML) use network-first with fallback to cache
   if (req.mode === 'navigate' || (req.headers.get('accept') && req.headers.get('accept').includes('text/html'))) {
     event.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
+        // only cache http(s) responses
+        try {
+          if (copy && copy.url && (copy.url.startsWith('http://') || copy.url.startsWith('https://'))) {
+            caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(()=>{});
+          }
+        } catch(e){}
         return res;
       }).catch(() => caches.match('index.html'))
     );
     return;
   }
 
+  // For other requests use cache-first then network
   event.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(networkRes => {
-        return caches.open(CACHE_NAME).then(cache => {
-          try { cache.put(req, networkRes.clone()); } catch (e) {}
-          return networkRes;
-        });
+        // only attempt to cache http(s) requests with valid response
+        try {
+          if (networkRes && networkRes.url && (networkRes.url.startsWith('http://') || networkRes.url.startsWith('https://'))) {
+            const copy = networkRes.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              try { cache.put(req, copy); } catch (e) {}
+            });
+          }
+        } catch (e) {}
+        return networkRes;
       }).catch(() => {});
     })
   );
