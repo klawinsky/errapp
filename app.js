@@ -1,5 +1,5 @@
-/* app.js — kompletny plik aplikacji z autocomplete, obsługą Supabase,
-   poprawionym liczeniem opóźnień oraz automatycznym odświeżaniem DyspoPanel */
+/* app.js — kompletny plik aplikacji z Supabase, obsługą raportów, Dyspo auto-refresh,
+   autocomplete stacji, modalami, service worker handling i poprawioną obsługą sidebar/hamburgera */
 
 console.log('app.js loaded');
 
@@ -12,9 +12,8 @@ function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* ---------- Stations autocomplete data & helpers ---------- */
+/* ---------- Stations autocomplete ---------- */
 let STATIONS = [];
-
 async function initStations() {
   try {
     const res = await fetch('stations.json', { cache: "no-cache" });
@@ -162,12 +161,14 @@ async function loadReports() {
   if (error) { console.error('loadReports error', error); return []; }
   return (data || []).map(mapDbReportToUi);
 }
+
 async function getReportById(id) {
   if (!id || !sb) return null;
   const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('id', id).single();
   if (error) { console.error('getReportById error', error); return null; }
   return mapDbReportToUi(data);
 }
+
 async function createEmptyReport() {
   const uid = await getCurrentUid();
   if (!sb) { console.error('createEmptyReport: sb not initialized'); return null; }
@@ -177,7 +178,6 @@ async function createEmptyReport() {
   return mapDbReportToUi(data);
 }
 
-// Bezpieczna wersja updateReportFields — filtruje pola i loguje szczegóły błędu
 async function updateReportFields(id, fields) {
   if (!id || !sb) {
     console.error('updateReportFields: missing id or supabase client');
@@ -222,7 +222,6 @@ async function addCrew(reportId, name, role, fromStation, toStation) {
 }
 async function addRun(reportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders) {
   if (!reportId || !sb) return null;
-  // Upewnij się, że daty są w ISO lub null
   const payload = [{
     report_id: reportId,
     station,
@@ -569,9 +568,11 @@ function bindUiActions() {
       if (action === "takeover") await takeOverReport(id);
       if (action === "preview") {
         const report = await getReportById(id);
+        if (!report) { alert('Nie można pobrać raportu'); return; }
         loadReportIntoForm(report, true);
         const nav = qs('.nav-btn[data-panel="handle-train"]');
-        if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); showPanel("handle-train"); }
+        if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); }
+        showPanel("handle-train");
       }
       return;
     }
@@ -724,6 +725,7 @@ function bindUiActions() {
     refreshLists();
   });
 
+  // bottom-nav exists but is intentionally not shown; keep click wiring in case of future use
   const bottomNav = qs('.bottom-nav');
   if (bottomNav) {
     bottomNav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
@@ -731,7 +733,7 @@ function bindUiActions() {
       const nav = qs(`.nav-btn[data-panel="${panel}"]`);
       if (nav) nav.click(); else showPanel(panel);
     }));
-    if (window.matchMedia && window.matchMedia('(max-width:900px)').matches) bottomNav.hidden = false;
+    // do not force show bottom-nav on mobile
   }
 }
 
@@ -772,38 +774,34 @@ async function refreshLists() {
       takeoverTbody.appendChild(tr);
     });
 
-    const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
-    const dateToStr = d => d.toISOString().slice(0,10);
-    const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('created_at', { ascending: false });
+    // check table — ALL reports
+    const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
     if (aErr) console.error('refreshLists allReports error', aErr);
     const checkTbody = qs("#check-table tbody"); if (checkTbody) checkTbody.innerHTML = "";
     (allReports || []).forEach(r => {
-      if (!r.date) return;
-      if (r.date === dateToStr(today) || r.date === dateToStr(yesterday)) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-          <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-          <td data-label="Dzień">${escapeHtml(r.date)}</td>
-          <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
-        checkTbody.appendChild(tr);
-      }
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
+        <td data-label="Status">${escapeHtml(r.status || '')}</td>
+        <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
+      checkTbody.appendChild(tr);
     });
 
+    // dyspo panel — active reports (not finished)
     const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
     if (arErr) console.error('refreshLists activeReports error', arErr);
     const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
 
     for (const r of (activeReports || [])) {
-      // Pobierz ostatnie wpisy runs dla raportu — najpierw spróbuj pobrać ostatni wpis z actual, jeśli brak to ostatni planned
+      // Pobierz ostatni wpis runs: preferuj ostatni actual, jeśli brak — ostatni planned
       let lr = null;
       try {
-        // najpierw spróbuj pobrać ostatni run z actual_arr (najnowszy actual)
         const { data: runsActual, error: raErr } = await sb.from('runs').select('*').eq('report_id', r.id).not('actual_arr', 'is', null).order('actual_arr', { ascending: false }).limit(1);
         if (raErr) console.warn('runsActual error', raErr);
         if (runsActual && runsActual.length) lr = runsActual[0];
         else {
-          // jeśli brak actual, pobierz ostatni planned
           const { data: runsPlanned, error: rpErr } = await sb.from('runs').select('*').eq('report_id', r.id).order('planned_arr', { ascending: false }).limit(1);
           if (rpErr) console.warn('runsPlanned error', rpErr);
           if (runsPlanned && runsPlanned.length) lr = runsPlanned[0];
@@ -1064,23 +1062,91 @@ function initDyspoAutoRefreshIntegration() {
 /* ---------- Init and helpers ---------- */
 function bindInitialUi() {
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
-  navBtns.forEach(btn => btn.addEventListener("click", () => { navBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); const panel = btn.getAttribute("data-panel"); showPanel(panel); const sidebarEl = qs("#sidebar"); if (sidebarEl) sidebarEl.classList.remove("open"); }));
+  navBtns.forEach(btn => btn.addEventListener("click", () => {
+    navBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const panel = btn.getAttribute("data-panel");
+    showPanel(panel);
+    const sidebarEl = qs("#sidebar");
+    if (sidebarEl) sidebarEl.classList.remove("open");
+  }));
 
-  Array.from(document.querySelectorAll("[data-open]")).forEach(b => b.addEventListener("click", () => { const panel = b.getAttribute("data-open"); const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`); if (nav) nav.click(); else showPanel(panel); }));
+  Array.from(document.querySelectorAll("[data-open]")).forEach(b => b.addEventListener("click", () => {
+    const panel = b.getAttribute("data-open");
+    const nav = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
+    if (nav) nav.click(); else showPanel(panel);
+  }));
 
   const sidebar = qs("#sidebar");
   const sidebarToggle = qs("#sidebar-toggle");
-  if (sidebarToggle && sidebar) {
+  const sidebarBackdrop = qs("#sidebar-backdrop");
+
+  // Sidebar/hamburger handling (robust)
+  if (sidebarToggle && sidebar && sidebarBackdrop) {
     sidebarToggle.addEventListener("click", (e) => {
       e.stopPropagation();
-      sidebar.classList.toggle("open");
-      sidebarToggle.setAttribute("aria-expanded", sidebar.classList.contains("open"));
+      if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        sidebarBackdrop.classList.remove('visible');
+        sidebarBackdrop.classList.add('hidden');
+        sidebarToggle.setAttribute('aria-expanded', 'false');
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      } else {
+        sidebar.classList.add('open');
+        sidebarBackdrop.classList.remove('hidden');
+        sidebarBackdrop.classList.add('visible');
+        sidebarToggle.setAttribute('aria-expanded', 'true');
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+      }
     });
-    document.addEventListener("click", (e) => {
-      if (!sidebar.classList.contains("open")) return;
-      if (e.target.closest("#sidebar") || e.target.closest("#sidebar-toggle")) return;
-      sidebar.classList.remove("open");
-      sidebarToggle.setAttribute("aria-expanded", "false");
+
+    sidebarBackdrop.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      sidebarBackdrop.classList.remove('visible');
+      sidebarBackdrop.classList.add('hidden');
+      sidebarToggle.setAttribute('aria-expanded', 'false');
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    });
+
+    // Close sidebar when a nav button inside it is clicked
+    sidebar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.nav-btn, [data-open]');
+      if (!btn) return;
+      setTimeout(() => {
+        sidebar.classList.remove('open');
+        sidebarBackdrop.classList.remove('visible');
+        sidebarBackdrop.classList.add('hidden');
+        sidebarToggle.setAttribute('aria-expanded', 'false');
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }, 120);
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        sidebarBackdrop.classList.remove('visible');
+        sidebarBackdrop.classList.add('hidden');
+        sidebarToggle.setAttribute('aria-expanded', 'false');
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }
+    });
+
+    // Ensure sidebar state on resize
+    window.addEventListener('resize', () => {
+      if (window.matchMedia && window.matchMedia('(min-width:901px)').matches) {
+        sidebar.classList.remove('open');
+        sidebarBackdrop.classList.remove('visible');
+        sidebarBackdrop.classList.add('hidden');
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+        sidebarToggle.setAttribute('aria-expanded', 'false');
+      }
     });
   }
 
@@ -1122,7 +1188,6 @@ async function initApp() {
     refreshLists();
   } catch (e) { console.error('initApp load error', e); }
 
-  // Integracja Dyspo auto-refresh po inicjalizacji
   setTimeout(() => {
     try { initDyspoAutoRefreshIntegration(); } catch(e){ console.error('initDyspoAutoRefreshIntegration error', e); }
   }, 800);
