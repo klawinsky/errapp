@@ -5,17 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>eRegioJet — Raporty pociągów</title>
 
-  <!-- PWA manifest and theme (relative paths) -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b74de">
   <meta name="mobile-web-app-capable" content="yes">
-
-  <!-- iOS PWA support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-  <!-- Stylesheet (relative path) -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -203,8 +199,8 @@
             <div class="panel-actions"><button id="refresh-check" class="btn">Odśwież</button></div>
           </div>
           <div class="card">
-            <p>Lista raportów (dziś i wczoraj) — tylko podgląd.</p>
-            <table class="table" id="check-table"><thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Podgląd</th></tr></thead><tbody></tbody></table>
+            <p>Lista wszystkich raportów — podgląd i statusy.</p>
+            <table class="table" id="check-table"><thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Status</th><th>Podgląd</th></tr></thead><tbody></tbody></table>
           </div>
         </section>
 
@@ -232,16 +228,7 @@
     <div id="confirm-backdrop" class="modal-backdrop hidden" aria-hidden="true">
       <div class="modal" role="dialog" aria-modal="true"><header class="modal-header"><h3>Potwierdzenie</h3></header><div id="confirm-message" class="modal-body"></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn ghost">Nie</button><button id="confirm-ok-btn" class="btn warning">Tak</button></footer></div>
     </div>
-
-    <nav class="bottom-nav" aria-label="Nawigacja mobilna" hidden>
-      <button class="btn" data-panel="menu">Menu</button>
-      <button class="btn" data-panel="handle-train">Obsługa</button>
-      <button class="btn" data-panel="takeover">Przejmij</button>
-      <button class="btn" data-panel="check">Sprawdź</button>
-    </nav>
   </div>
-
-  <button id="install-btn" style="display:none;position:fixed;right:12px;bottom:84px;z-index:90" class="btn">Dodaj na ekran główny</button>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
   <script>
@@ -250,37 +237,17 @@
     try { window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e){ console.error(e); }
   </script>
 
-  <!-- App script (relative path) -->
   <script src="app.js" defer></script>
 
   <script>
-    // Service worker registration using relative path
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('service-worker.js').then(reg => {
           console.log('Service worker zarejestrowany', reg);
-          // auto-activate waiting worker and reload when updated
-          if (reg.waiting) {
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-          reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            });
-          });
         }).catch(err => console.warn('Service worker error', err));
-      });
-
-      // reload when controller changes (new SW took control)
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        window.location.reload();
       });
     }
 
-    // beforeinstallprompt handling
     let deferredPrompt;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -298,28 +265,13 @@
       }
     });
 
-    // Basic sidebar toggle and nav switching
-    document.addEventListener('DOMContentLoaded', () => {
-      const sidebar = document.getElementById('sidebar');
-      const toggle = document.getElementById('sidebar-toggle');
-      if (toggle && sidebar) {
-        toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
-      }
-
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          const panel = btn.getAttribute('data-panel');
-          document.querySelectorAll('.panel').forEach(p => p.hidden = true);
-          const el = document.getElementById(`panel-${panel}`);
-          if (el) el.hidden = false;
-          if (window.matchMedia && window.matchMedia('(max-width:900px)').matches) {
-            sidebar.classList.remove('open');
-          }
-        });
-      });
-    });
+    function isStandalone() {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    }
+    if (isStandalone()) {
+      document.documentElement.classList.add('standalone');
+      console.log('Uruchomiono w trybie standalone');
+    }
   </script>
 </body>
 </html>
