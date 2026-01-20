@@ -42,7 +42,6 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
-        // only cache http(s) responses
         try {
           if (copy && copy.url && (copy.url.startsWith('http://') || copy.url.startsWith('https://'))) {
             caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(()=>{});
@@ -59,7 +58,6 @@ self.addEventListener('fetch', event => {
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(networkRes => {
-        // only attempt to cache http(s) requests with valid response
         try {
           if (networkRes && networkRes.url && (networkRes.url.startsWith('http://') || networkRes.url.startsWith('https://'))) {
             const copy = networkRes.clone();
