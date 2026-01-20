@@ -1,4 +1,7 @@
-/* app.js — kompletny plik aplikacji (zabezpieczenia, safeInitialRefresh, poprawione refresh/handlers) */
+/* app.js — kompletny plik aplikacji (pełna wersja)
+   Zawiera: Supabase init, autocomplete, CRUD raportów, modal, autosave,
+   safe refreshLists (ensureTableExists), Dyspo auto-refresh, sidebar handling.
+*/
 
 console.log('app.js loaded');
 
@@ -219,7 +222,7 @@ function renderConsist(report) {
   if (locoTbody) locoTbody.innerHTML = "";
   if (wagonTbody) wagonTbody.innerHTML = "";
   (report?.consist || []).forEach((l) => {
-    const tr = document.createElement("tr");
+    const tr = document.createElement('tr');
     tr.innerHTML = `
       <td data-label="Oznaczenie">${escapeHtml(l.mark)}</td>
       <td data-label="Od">${escapeHtml(l.from_station)}</td>
@@ -591,12 +594,9 @@ function bindUiActions() {
 
     if (role === 'edit') {
       if (!id || !type) return;
-      // fetch record and open appropriate edit modal (handled in previous code paths)
-      // reuse existing logic by simulating click on edit (we'll fetch and open)
       const table = (type === 'consist' ? 'consist' : type);
       const { data, error } = await sb.from(table).select('*').eq('id', id).single();
       if (error || !data) { alert('Błąd pobierania rekordu'); return; }
-      // handle run/dispo/remark editing as before
       if (type === 'run') {
         const stationVal = data.station || '';
         const plannedArrVal = data.planned_arr || '';
@@ -696,13 +696,55 @@ async function takeOverReport(reportId) {
   refreshLists();
 }
 
-/* ---------- Safe refreshLists (zabezpieczenia przed null DOM) ---------- */
-
+/* ---------- Ensure table exists helper (creates table if missing) ---------- */
+function ensureTableExists(tableSelector) {
+  const existing = qs(tableSelector);
+  if (existing) return existing;
+  const map = {
+    '#takeover-table': {
+      panelId: 'panel-takeover',
+      headers: ['Numer', 'Relacja', 'Dzień', 'Akcja']
+    },
+    '#check-table': {
+      panelId: 'panel-check',
+      headers: ['Numer', 'Relacja', 'Dzień', 'Status', 'Podgląd']
+    },
+    '#dyspo-table': {
+      panelId: 'panel-dyspo',
+      headers: ['Numer', 'Relacja', 'Ostatnia stacja', 'Odchylenie (min)']
+    }
+  };
+  const cfg = map[tableSelector];
+  if (!cfg) return null;
+  const panel = qs(`#${cfg.panelId}`);
+  if (!panel) return null;
+  const card = document.createElement('div');
+  card.className = 'card';
+  const table = document.createElement('table');
+  table.className = 'table';
+  table.id = tableSelector.replace('#','');
+  const thead = document.createElement('thead');
+  const trHead = document.createElement('tr');
+  cfg.headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    trHead.appendChild(th);
+  });
+  thead.appendChild(trHead);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+  card.appendChild(table);
+  const firstCard = panel.querySelector('.card');
+  if (firstCard) panel.insertBefore(card, firstCard);
+  else panel.appendChild(card);
+  return table;
+}
 function getOrCreateTbody(tableSelector) {
-  const table = qs(tableSelector);
+  let table = qs(tableSelector);
   if (!table) {
-    // ciche pominięcie — tabela nie istnieje w tym widoku
-    return null;
+    table = ensureTableExists(tableSelector);
+    if (!table) return null;
   }
   let tbody = table.querySelector('tbody');
   if (!tbody) {
@@ -712,12 +754,11 @@ function getOrCreateTbody(tableSelector) {
   return tbody;
 }
 
+/* ---------- Safe refreshLists (zabezpieczenia przed null DOM) ---------- */
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
-
   try {
-    // takeover
     const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
     if (tErr) console.error('refreshLists takeover error', tErr);
     const takeoverTbody = getOrCreateTbody("#takeover-table");
@@ -733,7 +774,6 @@ async function refreshLists() {
       takeoverTbody.appendChild(tr);
     });
 
-    // check
     const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
     if (aErr) console.error('refreshLists allReports error', aErr);
     const checkTbody = getOrCreateTbody("#check-table");
@@ -750,7 +790,6 @@ async function refreshLists() {
       checkTbody.appendChild(tr);
     });
 
-    // dyspo
     const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
     if (arErr) console.error('refreshLists activeReports error', arErr);
     const dyspoTbody = getOrCreateTbody("#dyspo-table");
