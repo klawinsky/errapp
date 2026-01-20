@@ -1,5 +1,4 @@
-/* app.js — kompletny plik aplikacji z Supabase, obsługą raportów, Dyspo auto-refresh,
-   autocomplete stacji, modalami, service worker handling i poprawioną obsługą sidebar/hamburgera */
+/* app.js — kompletny plik aplikacji (zabezpieczenia, safeInitialRefresh, poprawione refresh/handlers) */
 
 console.log('app.js loaded');
 
@@ -26,7 +25,6 @@ async function initStations() {
     STATIONS = [];
   }
 }
-
 function findStations(query, limit = 30) {
   if (!query) return STATIONS.slice(0, limit);
   const q = query.trim().toLowerCase();
@@ -35,12 +33,10 @@ function findStations(query, limit = 30) {
   const rest = STATIONS.filter(s => !pref.includes(s) && ((s.name||'').toLowerCase().includes(q) || (s.code||'').toLowerCase().includes(q)));
   return pref.concat(rest).slice(0, limit);
 }
-
 function attachStationAutocomplete(inputEl, listEl) {
   if (!inputEl || !listEl) return;
   let focusedIndex = -1;
   let currentItems = [];
-
   function renderList(items) {
     listEl.innerHTML = '';
     if (!items || items.length === 0) {
@@ -64,7 +60,6 @@ function attachStationAutocomplete(inputEl, listEl) {
     currentItems = items;
     focusedIndex = -1;
   }
-
   function selectItem(idx) {
     const s = currentItems[idx];
     if (!s) return;
@@ -73,53 +68,22 @@ function attachStationAutocomplete(inputEl, listEl) {
     hideList();
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
-
-  function hideList() {
-    listEl.classList.add('hidden');
-    focusedIndex = -1;
-  }
-
-  function onInput() {
-    const q = inputEl.value || '';
-    const items = findStations(q, 30);
-    renderList(items);
-  }
-
+  function hideList() { listEl.classList.add('hidden'); focusedIndex = -1; }
+  function onInput() { const q = inputEl.value || ''; const items = findStations(q, 30); renderList(items); }
   function onKeyDown(e) {
     if (listEl.classList.contains('hidden')) return;
     const items = listEl.querySelectorAll('.item');
     if (!items.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      focusedIndex = Math.min(focusedIndex + 1, items.length - 1);
-      updateFocus(items);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      focusedIndex = Math.max(focusedIndex - 1, 0);
-      updateFocus(items);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (focusedIndex >= 0) selectItem(focusedIndex);
-      else hideList();
-    } else if (e.key === 'Escape') {
-      hideList();
-    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); focusedIndex = Math.min(focusedIndex + 1, items.length - 1); updateFocus(items); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusedIndex = Math.max(focusedIndex - 1, 0); updateFocus(items); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (focusedIndex >= 0) selectItem(focusedIndex); else hideList(); }
+    else if (e.key === 'Escape') hideList();
   }
-
-  function updateFocus(items) {
-    items.forEach((it, i) => it.classList.toggle('active', i === focusedIndex));
-    if (focusedIndex >= 0 && items[focusedIndex]) items[focusedIndex].scrollIntoView({block:'nearest'});
-  }
-
-  function onDocClick(e) {
-    if (e.target === inputEl || e.target.closest('.autocomplete') === inputEl.closest('.autocomplete')) return;
-    hideList();
-  }
-
+  function updateFocus(items) { items.forEach((it, i) => it.classList.toggle('active', i === focusedIndex)); if (focusedIndex >= 0 && items[focusedIndex]) items[focusedIndex].scrollIntoView({block:'nearest'}); }
+  function onDocClick(e) { if (e.target === inputEl || e.target.closest('.autocomplete') === inputEl.closest('.autocomplete')) return; hideList(); }
   inputEl.addEventListener('input', onInput);
   inputEl.addEventListener('keydown', onKeyDown);
   document.addEventListener('click', onDocClick);
-
   return { hideList };
 }
 
@@ -153,7 +117,6 @@ function mapDbReportToUi(r) {
     consist: r.consist || [], crew: r.crew || [], runs: r.runs || [], dispos: r.dispos || [], remarks: r.remarks || []
   };
 }
-
 async function loadReports() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return [];
@@ -161,14 +124,12 @@ async function loadReports() {
   if (error) { console.error('loadReports error', error); return []; }
   return (data || []).map(mapDbReportToUi);
 }
-
 async function getReportById(id) {
   if (!id || !sb) return null;
   const { data, error } = await sb.from('reports').select('*, consist(*), crew(*), runs(*), dispos(*), remarks(*)').eq('id', id).single();
   if (error) { console.error('getReportById error', error); return null; }
   return mapDbReportToUi(data);
 }
-
 async function createEmptyReport() {
   const uid = await getCurrentUid();
   if (!sb) { console.error('createEmptyReport: sb not initialized'); return null; }
@@ -177,34 +138,17 @@ async function createEmptyReport() {
   if (error) { console.error('createEmptyReport error', error); return null; }
   return mapDbReportToUi(data);
 }
-
 async function updateReportFields(id, fields) {
-  if (!id || !sb) {
-    console.error('updateReportFields: missing id or supabase client');
-    return null;
-  }
-
+  if (!id || !sb) return null;
   try {
     const allowed = ['train_number', 'date', 'from_station', 'to_station', 'status'];
     const payload = {};
-    Object.keys(fields || {}).forEach(key => {
-      if (allowed.includes(key)) payload[key] = fields[key];
-    });
-    if (Object.keys(payload).length === 0) {
-      console.warn('updateReportFields: no allowed fields to update', fields);
-      return null;
-    }
-    const { data, error, status } = await sb.from('reports').update(payload).eq('id', id).select().single();
-    if (error) {
-      try { console.error('updateReportFields error', { status, error: JSON.parse(JSON.stringify(error)) }); }
-      catch(e) { console.error('updateReportFields error (raw)', status, error); }
-      return null;
-    }
+    Object.keys(fields || {}).forEach(key => { if (allowed.includes(key)) payload[key] = fields[key]; });
+    if (Object.keys(payload).length === 0) return null;
+    const { data, error } = await sb.from('reports').update(payload).eq('id', id).select().single();
+    if (error) { console.error('updateReportFields error', error); return null; }
     return mapDbReportToUi(data);
-  } catch (ex) {
-    console.error('updateReportFields exception', ex);
-    return null;
-  }
+  } catch (ex) { console.error('updateReportFields exception', ex); return null; }
 }
 
 /* related records */
@@ -261,7 +205,7 @@ async function updateRow(table, id, fields) {
   return data;
 }
 
-/* ---------- Render helpers (data-label added) ---------- */
+/* ---------- Render helpers ---------- */
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
   if (!label) return;
@@ -270,7 +214,6 @@ function updateStatusLabel(report) {
   else if (report.status === "handed_over") label.textContent = "Status: Przekazana do przejęcia";
   else label.textContent = "Status: W trakcie prowadzenia";
 }
-
 function renderConsist(report) {
   const locoTbody = qs("#loco-table tbody"); const wagonTbody = qs("#wagon-table tbody");
   if (locoTbody) locoTbody.innerHTML = "";
@@ -285,10 +228,10 @@ function renderConsist(report) {
         <button class="btn small" data-role="edit" data-type="consist" data-id="${l.id}">Edytuj</button>
         <button class="btn warning small" data-role="delete" data-type="consist" data-id="${l.id}">Usuń</button>
       </td>`;
-    if (l.type === 'loco') locoTbody.appendChild(tr); else wagonTbody.appendChild(tr);
+    if (l.type === 'loco' && locoTbody) locoTbody.appendChild(tr);
+    else if (wagonTbody) wagonTbody.appendChild(tr);
   });
 }
-
 function renderCrew(report) {
   const tbody = qs("#crew-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.crew || []).forEach(c => {
@@ -305,8 +248,6 @@ function renderCrew(report) {
     tbody.appendChild(tr);
   });
 }
-
-// Poprawiona funkcja licząca opóźnienie w minutach
 function calculateDelayMinutes(planned, actual) {
   if (!planned) return null;
   const p = new Date(planned);
@@ -320,14 +261,12 @@ function calculateDelayMinutes(planned, actual) {
   if (now.getTime() < p.getTime()) return null;
   return Math.round((now.getTime() - p.getTime()) / 60000);
 }
-
 function formatDelayCell(delay) {
   if (delay === null) return "";
   if (delay < 0) return `${delay} min`;
   if (delay > 0) return `+${delay} min`;
   return `0 min`;
 }
-
 function renderRuns(report) {
   const tbody = qs("#run-table tbody"); if (!tbody) return; tbody.innerHTML = "";
   (report?.runs || []).forEach(r => {
@@ -353,7 +292,6 @@ function renderRuns(report) {
     tbody.appendChild(tr);
   });
 }
-
 function renderDispos(report) {
   const list = qs("#dispo-list"); if (!list) return; list.innerHTML = "";
   (report?.dispos || []).forEach(d => {
@@ -364,7 +302,6 @@ function renderDispos(report) {
     list.appendChild(li);
   });
 }
-
 function renderRemarks(report) {
   const list = qs("#remark-list"); if (!list) return; list.innerHTML = "";
   (report?.remarks || []).forEach(r => {
@@ -389,29 +326,29 @@ function openModal(title, bodyHtml, onSave) {
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
   modalSaveHandler = onSave;
-  modalBackdrop.classList.remove('hidden');
-  modalBackdrop.setAttribute('aria-hidden','false');
+  modalBackdrop.classList.remove("hidden");
+  modalBackdrop.setAttribute("aria-hidden","false");
   lastFocusedElement = document.activeElement;
   setTimeout(() => {
     const first = modalBody.querySelector('input,textarea,select,button,[tabindex]:not([tabindex="-1"])');
     if (first) { first.scrollIntoView({behavior:'smooth',block:'center'}); first.focus(); }
     else if (modalSaveBtn) modalSaveBtn.focus();
   }, 220);
-  document.addEventListener('keydown', trapTabKey);
-  document.addEventListener('keydown', escCloseModal);
+  document.addEventListener("keydown", trapTabKey);
+  document.addEventListener("keydown", escCloseModal);
 }
 function closeModal() {
   if (!modalBackdrop) return;
-  modalBackdrop.classList.add('hidden');
-  modalBackdrop.setAttribute('aria-hidden','true');
+  modalBackdrop.classList.add("hidden");
+  modalBackdrop.setAttribute("aria-hidden","true");
   modalSaveHandler = null;
   if (lastFocusedElement) lastFocusedElement.focus();
-  document.removeEventListener('keydown', trapTabKey);
-  document.removeEventListener('keydown', escCloseModal);
+  document.removeEventListener("keydown", trapTabKey);
+  document.removeEventListener("keydown", escCloseModal);
 }
-if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeModal);
-if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
-if (modalSaveBtn) modalSaveBtn.addEventListener('click', () => { if (modalSaveHandler) modalSaveHandler(); });
+if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeModal);
+if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
+if (modalSaveBtn) modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
 if (modalBackdrop) modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
 function escCloseModal(e) { if (e.key === "Escape") closeModal(); }
 function trapTabKey(e) {
@@ -423,7 +360,7 @@ function trapTabKey(e) {
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* ---------- UI bindings ---------- */
+/* ---------- UI bindings (buttons, delegation) ---------- */
 function bindUiActions() {
   const safe = (sel, cb) => { const el = qs(sel); if (el) el.addEventListener('click', cb); };
 
@@ -506,14 +443,11 @@ function bindUiActions() {
       const delayReason = qs("#modal-run-delay-reason").value.trim();
       const orders = qs("#modal-run-orders").value.trim();
       if (!station) { alert("Podaj nazwę stacji."); return; }
-
-      // Konwersja datetime-local (bez strefy) do ISO (lokalnego)
       const toIso = (v) => v ? new Date(v).toISOString() : null;
       const plannedArr = toIso(plannedArrRaw);
       const actualArr = toIso(actualArrRaw);
       const plannedDep = toIso(plannedDepRaw);
       const actualDep = toIso(actualDepRaw);
-
       await addRun(currentReportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders);
       const report = await getReportById(currentReportId);
       loadReportIntoForm(report, false);
@@ -558,120 +492,7 @@ function bindUiActions() {
     });
   });
 
-  document.addEventListener("click", async (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    const role = btn.getAttribute("data-role");
-    const action = btn.getAttribute("data-action");
-    if (action) {
-      const id = btn.getAttribute("data-id");
-      if (action === "takeover") await takeOverReport(id);
-      if (action === "preview") {
-        const report = await getReportById(id);
-        if (!report) { alert('Nie można pobrać raportu'); return; }
-        loadReportIntoForm(report, true);
-        const nav = qs('.nav-btn[data-panel="handle-train"]');
-        if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); }
-        showPanel("handle-train");
-      }
-      return;
-    }
-    if (!role) return;
-    const type = btn.getAttribute("data-type");
-    const id = btn.getAttribute("data-id");
-    if (role === "delete") {
-      if (!confirm("Na pewno usunąć?")) return;
-      await deleteRow(type === 'consist' ? 'consist' : type, id);
-      const report = await getReportById(currentReportId);
-      loadReportIntoForm(report, false);
-      refreshLists();
-    }
-    if (role === "edit") {
-      const table = (type === 'consist' ? 'consist' : type);
-      const { data, error } = await sb.from(table).select('*').eq('id', id).single();
-      if (error || !data) { alert('Błąd pobierania rekordu'); return; }
-
-      if (type === 'run') {
-        const stationVal = data.station || '';
-        const plannedArrVal = data.planned_arr || '';
-        const actualArrVal = data.actual_arr || '';
-        const plannedDepVal = data.planned_dep || '';
-        const actualDepVal = data.actual_dep || '';
-        const delayReasonVal = data.delay_reason || '';
-        const ordersVal = data.orders || '';
-
-        openModal("Edytuj wpis jazdy", `
-          <label><span>Nazwa stacji</span>
-            <div class="autocomplete">
-              <input id="modal-run-station" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" value="${escapeAttr(stationVal)}" />
-              <div class="autocomplete-list hidden" id="list-modal-run-station" role="listbox"></div>
-            </div>
-          </label>
-          <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" value="${escapeAttr(plannedArrVal ? plannedArrVal.slice(0,16) : '')}" /></label>
-          <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" value="${escapeAttr(actualArrVal ? actualArrVal.slice(0,16) : '')}" /></label>
-          <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" value="${escapeAttr(plannedDepVal ? plannedDepVal.slice(0,16) : '')}" /></label>
-          <label><span>Rzeczywisty odjazd</span><input id="modal-run-actual-dep" type="datetime-local" value="${escapeAttr(actualDepVal ? actualDepVal.slice(0,16) : '')}" /></label>
-          <label><span>Powód opóźnienia</span><input id="modal-run-delay-reason" type="text" value="${escapeAttr(delayReasonVal)}" /></label>
-          <label><span>Otrzymane rozkazy</span><textarea id="modal-run-orders">${escapeAttr(ordersVal)}</textarea></label>
-        `, async () => {
-          const station = qs("#modal-run-station").value.trim();
-          const plannedArrRaw = qs("#modal-run-planned-arr").value;
-          const actualArrRaw = qs("#modal-run-actual-arr").value;
-          const plannedDepRaw = qs("#modal-run-planned-dep").value;
-          const actualDepRaw = qs("#modal-run-actual-dep").value;
-          const delayReason = qs("#modal-run-delay-reason").value.trim();
-          const orders = qs("#modal-run-orders").value.trim();
-          if (!station) { alert("Podaj nazwę stacji."); return; }
-
-          const toIso = (v) => v ? new Date(v).toISOString() : null;
-          await updateRow('runs', id, {
-            station,
-            planned_arr: toIso(plannedArrRaw),
-            actual_arr: toIso(actualArrRaw),
-            planned_dep: toIso(plannedDepRaw),
-            actual_dep: toIso(actualDepRaw),
-            delay_reason: delayReason, orders
-          });
-          const report = await getReportById(currentReportId);
-          loadReportIntoForm(report, false);
-          closeModal(); refreshLists();
-        });
-
-        setTimeout(() => {
-          const modalStationInput = qs('#modal-run-station');
-          const modalStationList = qs('#list-modal-run-station');
-          if (modalStationInput && modalStationList) {
-            attachStationAutocomplete(modalStationInput, modalStationList);
-            modalStationInput.dispatchEvent(new Event('input'));
-          }
-        }, 250);
-
-      } else if (type === 'dispo') {
-        openModal("Edytuj dyspozycję", `
-          <label><span>Źródło</span><input id="modal-dispo-source" type="text" value="${escapeAttr(data.source)}" /></label>
-          <label><span>Treść</span><textarea id="modal-dispo-text">${escapeAttr(data.text)}</textarea></label>
-        `, async () => {
-          const source = qs("#modal-dispo-source").value;
-          const text = qs("#modal-dispo-text").value;
-          await updateRow('dispos', id, { source, text });
-          const report = await getReportById(currentReportId);
-          loadReportIntoForm(report, false);
-          closeModal(); refreshLists();
-        });
-      } else if (type === 'remark') {
-        openModal("Edytuj uwagę", `<label><span>Treść</span><textarea id="modal-remark-text">${escapeAttr(data.text)}</textarea></label>`, async () => {
-          const text = qs("#modal-remark-text").value;
-          await updateRow('remarks', id, { text });
-          const report = await getReportById(currentReportId);
-          loadReportIntoForm(report, false);
-          closeModal(); refreshLists();
-        });
-      } else {
-        alert('Edycja tego typu rekordu dostępna w kolejnej wersji.');
-      }
-    }
-  });
-
+  // Save / generate / finish / handover / new report
   const saveBtn = qs("#save-report-btn");
   if (saveBtn) saveBtn.addEventListener("click", async () => {
     const r = await readReportFromForm();
@@ -725,16 +546,136 @@ function bindUiActions() {
     refreshLists();
   });
 
-  // bottom-nav exists but is intentionally not shown; keep click wiring in case of future use
-  const bottomNav = qs('.bottom-nav');
-  if (bottomNav) {
-    bottomNav.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
-      const panel = b.getAttribute('data-panel');
-      const nav = qs(`.nav-btn[data-panel="${panel}"]`);
-      if (nav) nav.click(); else showPanel(panel);
-    }));
-    // do not force show bottom-nav on mobile
-  }
+  // Panel manual refresh buttons
+  const refreshTakeover = qs('#refresh-takeover');
+  if (refreshTakeover) refreshTakeover.addEventListener('click', () => refreshLists());
+  const refreshCheck = qs('#refresh-check');
+  if (refreshCheck) refreshCheck.addEventListener('click', () => refreshLists());
+  const refreshDyspo = qs('#refresh-dyspo');
+  if (refreshDyspo) refreshDyspo.addEventListener('click', () => { triggerDyspoRefresh(true); });
+
+  // Delegated click handler for table buttons (preview, takeover, edit, delete)
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    const role = btn.getAttribute('data-role');
+    const type = btn.getAttribute('data-type');
+    const id = btn.getAttribute('data-id');
+
+    if (action === 'takeover') {
+      if (!id) return;
+      await takeOverReport(id);
+      return;
+    }
+    if (action === 'preview') {
+      if (!id) return;
+      const report = await getReportById(id);
+      if (!report) { alert('Nie można pobrać raportu'); return; }
+      loadReportIntoForm(report, true);
+      const nav = qs('.nav-btn[data-panel="handle-train"]');
+      if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); }
+      showPanel("handle-train");
+      return;
+    }
+
+    if (role === 'delete') {
+      if (!id || !type) return;
+      if (!confirm("Na pewno usunąć?")) return;
+      await deleteRow(type === 'consist' ? 'consist' : type, id);
+      const report = await getReportById(currentReportId);
+      loadReportIntoForm(report, false);
+      refreshLists();
+      return;
+    }
+
+    if (role === 'edit') {
+      if (!id || !type) return;
+      // fetch record and open appropriate edit modal (handled in previous code paths)
+      // reuse existing logic by simulating click on edit (we'll fetch and open)
+      const table = (type === 'consist' ? 'consist' : type);
+      const { data, error } = await sb.from(table).select('*').eq('id', id).single();
+      if (error || !data) { alert('Błąd pobierania rekordu'); return; }
+      // handle run/dispo/remark editing as before
+      if (type === 'run') {
+        const stationVal = data.station || '';
+        const plannedArrVal = data.planned_arr || '';
+        const actualArrVal = data.actual_arr || '';
+        const plannedDepVal = data.planned_dep || '';
+        const actualDepVal = data.actual_dep || '';
+        const delayReasonVal = data.delay_reason || '';
+        const ordersVal = data.orders || '';
+
+        openModal("Edytuj wpis jazdy", `
+          <label><span>Nazwa stacji</span>
+            <div class="autocomplete">
+              <input id="modal-run-station" type="text" autocomplete="off" placeholder="Wpisz lub wybierz stację" value="${escapeAttr(stationVal)}" />
+              <div class="autocomplete-list hidden" id="list-modal-run-station" role="listbox"></div>
+            </div>
+          </label>
+          <label><span>Planowy przyjazd</span><input id="modal-run-planned-arr" type="datetime-local" value="${escapeAttr(plannedArrVal ? plannedArrVal.slice(0,16) : '')}" /></label>
+          <label><span>Rzeczywisty przyjazd</span><input id="modal-run-actual-arr" type="datetime-local" value="${escapeAttr(actualArrVal ? actualArrVal.slice(0,16) : '')}" /></label>
+          <label><span>Planowy odjazd</span><input id="modal-run-planned-dep" type="datetime-local" value="${escapeAttr(plannedDepVal ? plannedDepVal.slice(0,16) : '')}" /></label>
+          <label><span>Rzeczywisty odjazd</span><input id="modal-run-actual-dep" type="datetime-local" value="${escapeAttr(actualDepVal ? actualDepVal.slice(0,16) : '')}" /></label>
+          <label><span>Powód opóźnienia</span><input id="modal-run-delay-reason" type="text" value="${escapeAttr(delayReasonVal)}" /></label>
+          <label><span>Otrzymane rozkazy</span><textarea id="modal-run-orders">${escapeAttr(ordersVal)}</textarea></label>
+        `, async () => {
+          const station = qs("#modal-run-station").value.trim();
+          const plannedArrRaw = qs("#modal-run-planned-arr").value;
+          const actualArrRaw = qs("#modal-run-actual-arr").value;
+          const plannedDepRaw = qs("#modal-run-planned-dep").value;
+          const actualDepRaw = qs("#modal-run-actual-dep").value;
+          const delayReason = qs("#modal-run-delay-reason").value.trim();
+          const orders = qs("#modal-run-orders").value.trim();
+          if (!station) { alert("Podaj nazwę stacji."); return; }
+          const toIso = (v) => v ? new Date(v).toISOString() : null;
+          await updateRow('runs', id, {
+            station,
+            planned_arr: toIso(plannedArrRaw),
+            actual_arr: toIso(actualArrRaw),
+            planned_dep: toIso(plannedDepRaw),
+            actual_dep: toIso(actualDepRaw),
+            delay_reason: delayReason, orders
+          });
+          const report = await getReportById(currentReportId);
+          loadReportIntoForm(report, false);
+          closeModal(); refreshLists();
+        });
+
+        setTimeout(() => {
+          const modalStationInput = qs('#modal-run-station');
+          const modalStationList = qs('#list-modal-run-station');
+          if (modalStationInput && modalStationList) {
+            attachStationAutocomplete(modalStationInput, modalStationList);
+            modalStationInput.dispatchEvent(new Event('input'));
+          }
+        }, 250);
+      } else if (type === 'dispo') {
+        openModal("Edytuj dyspozycję", `
+          <label><span>Źródło</span><input id="modal-dispo-source" type="text" value="${escapeAttr(data.source)}" /></label>
+          <label><span>Treść</span><textarea id="modal-dispo-text">${escapeAttr(data.text)}</textarea></label>
+        `, async () => {
+          const source = qs("#modal-dispo-source").value;
+          const text = qs("#modal-dispo-text").value;
+          await updateRow('dispos', id, { source, text });
+          const report = await getReportById(currentReportId);
+          loadReportIntoForm(report, false);
+          closeModal(); refreshLists();
+        });
+      } else if (type === 'remark') {
+        openModal("Edytuj uwagę", `<label><span>Treść</span><textarea id="modal-remark-text">${escapeAttr(data.text)}</textarea></label>`, async () => {
+          const text = qs("#modal-remark-text").value;
+          await updateRow('remarks', id, { text });
+          const report = await getReportById(currentReportId);
+          loadReportIntoForm(report, false);
+          closeModal(); refreshLists();
+        });
+      } else {
+        alert('Edycja tego typu rekordu dostępna w kolejnej wersji.');
+      }
+      return;
+    }
+  });
 }
 
 /* handover/takeover */
@@ -757,30 +698,28 @@ async function takeOverReport(reportId) {
 
 /* ---------- Safe refreshLists (zabezpieczenia przed null DOM) ---------- */
 
+function getOrCreateTbody(tableSelector) {
+  const table = qs(tableSelector);
+  if (!table) {
+    // ciche pominięcie — tabela nie istnieje w tym widoku
+    return null;
+  }
+  let tbody = table.querySelector('tbody');
+  if (!tbody) {
+    tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+  }
+  return tbody;
+}
+
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
 
-  // helper: bezpiecznie pobiera tbody lub tworzy go jeśli brak
-  function getOrCreateTbody(tableSelector) {
-    const table = qs(tableSelector);
-    if (!table) {
-      console.warn('refreshLists: brak tabeli', tableSelector);
-      return null;
-    }
-    let tbody = table.querySelector('tbody');
-    if (!tbody) {
-      tbody = document.createElement('tbody');
-      table.appendChild(tbody);
-    }
-    return tbody;
-  }
-
   try {
-    // 1) Raporty przekazane do przejęcia (takeover)
+    // takeover
     const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
     if (tErr) console.error('refreshLists takeover error', tErr);
-
     const takeoverTbody = getOrCreateTbody("#takeover-table");
     if (takeoverTbody) takeoverTbody.innerHTML = "";
     (takeoverData || []).forEach(r => {
@@ -794,10 +733,9 @@ async function refreshLists() {
       takeoverTbody.appendChild(tr);
     });
 
-    // 2) Podgląd raportów — wszystkie raporty
+    // check
     const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
     if (aErr) console.error('refreshLists allReports error', aErr);
-
     const checkTbody = getOrCreateTbody("#check-table");
     if (checkTbody) checkTbody.innerHTML = "";
     (allReports || []).forEach(r => {
@@ -812,17 +750,14 @@ async function refreshLists() {
       checkTbody.appendChild(tr);
     });
 
-    // 3) DyspoPanel — aktywne raporty z obliczeniem opóźnienia
+    // dyspo
     const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
     if (arErr) console.error('refreshLists activeReports error', arErr);
-
     const dyspoTbody = getOrCreateTbody("#dyspo-table");
     if (dyspoTbody) dyspoTbody.innerHTML = "";
 
     for (const r of (activeReports || [])) {
       if (!dyspoTbody) break;
-
-      // Pobierz ostatni wpis runs: preferuj ostatni actual, jeśli brak — ostatni planned
       let lr = null;
       try {
         const { data: runsActual, error: raErr } = await sb.from('runs').select('*').eq('report_id', r.id).not('actual_arr', 'is', null).order('actual_arr', { ascending: false }).limit(1);
@@ -856,6 +791,7 @@ async function refreshLists() {
         <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):String(delay))}</td>`;
       dyspoTbody.appendChild(tr);
     }
+
   } catch (e) {
     console.error('refreshLists outer error', e);
   }
@@ -869,7 +805,6 @@ async function readReportFromForm() {
   const to = qs("#general-to")?.value.trim() || "";
   return { general: { trainNumber: train, date, from, to } };
 }
-
 function loadReportIntoForm(report, isReadOnly) {
   if (!report) return;
   currentReportId = report.id;
@@ -988,16 +923,13 @@ function openPrintWindow(report) {
   win.document.open(); win.document.write(html); win.document.close();
 }
 
-/* ---------- DyspoPanel auto-refresh (co 3 minuty) ---------- */
-
-let dyspoRefreshIntervalMs = 3 * 60 * 1000; // 3 minuty
+/* ---------- DyspoPanel auto-refresh ---------- */
+let dyspoRefreshIntervalMs = 3 * 60 * 1000;
 let dyspoRefreshTimer = null;
 let isRefreshingDyspo = false;
-
 function ensureDyspoUiElements() {
   const panel = document.getElementById('panel-dyspo');
   if (!panel) return;
-
   if (!document.getElementById('dyspo-last-updated')) {
     const header = panel.querySelector('.panel-header');
     if (header) {
@@ -1009,7 +941,6 @@ function ensureDyspoUiElements() {
       header.appendChild(info);
     }
   }
-
   const refreshBtnId = 'dyspo-manual-refresh';
   if (!document.getElementById(refreshBtnId)) {
     const header = panel.querySelector('.panel-header .panel-actions');
@@ -1018,28 +949,21 @@ function ensureDyspoUiElements() {
       btn.id = refreshBtnId;
       btn.className = 'btn small';
       btn.textContent = 'Odśwież teraz';
-      btn.addEventListener('click', () => {
-        triggerDyspoRefresh(true);
-      });
+      btn.addEventListener('click', () => { triggerDyspoRefresh(true); });
       header.appendChild(btn);
     }
   }
 }
-
 function setDyspoLastUpdated(ts = null) {
   const el = document.getElementById('dyspo-last-updated');
   if (!el) return;
-  if (!ts) {
-    el.textContent = '';
-    return;
-  }
+  if (!ts) { el.textContent = ''; return; }
   const d = new Date(ts);
   const hh = String(d.getHours()).padStart(2,'0');
   const mm = String(d.getMinutes()).padStart(2,'0');
   const ss = String(d.getSeconds()).padStart(2,'0');
   el.textContent = `Ostatnie odświeżenie: ${hh}:${mm}:${ss}`;
 }
-
 async function triggerDyspoRefresh(force = false) {
   if (isRefreshingDyspo && !force) return;
   isRefreshingDyspo = true;
@@ -1047,44 +971,18 @@ async function triggerDyspoRefresh(force = false) {
     if (typeof refreshLists === 'function') {
       await refreshLists();
       setDyspoLastUpdated(Date.now());
-    } else {
-      console.warn('triggerDyspoRefresh: refreshLists() nieznane');
-    }
-  } catch (e) {
-    console.error('triggerDyspoRefresh error', e);
-  } finally {
-    isRefreshingDyspo = false;
-  }
+    } else console.warn('triggerDyspoRefresh: refreshLists() nieznane');
+  } catch (e) { console.error('triggerDyspoRefresh error', e); }
+  finally { isRefreshingDyspo = false; }
 }
-
 function startDyspoAutoRefresh() {
   stopDyspoAutoRefresh();
   triggerDyspoRefresh();
-  dyspoRefreshTimer = setInterval(() => {
-    if (document.hidden) return;
-    triggerDyspoRefresh();
-  }, dyspoRefreshIntervalMs);
+  dyspoRefreshTimer = setInterval(() => { if (document.hidden) return; triggerDyspoRefresh(); }, dyspoRefreshIntervalMs);
 }
-
-function stopDyspoAutoRefresh() {
-  if (dyspoRefreshTimer) {
-    clearInterval(dyspoRefreshTimer);
-    dyspoRefreshTimer = null;
-  }
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopDyspoAutoRefresh();
-  } else {
-    startDyspoAutoRefresh();
-  }
-});
-
-function initDyspoAutoRefreshIntegration() {
-  ensureDyspoUiElements();
-  startDyspoAutoRefresh();
-}
+function stopDyspoAutoRefresh() { if (dyspoRefreshTimer) { clearInterval(dyspoRefreshTimer); dyspoRefreshTimer = null; } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopDyspoAutoRefresh(); else startDyspoAutoRefresh(); });
+function initDyspoAutoRefreshIntegration() { ensureDyspoUiElements(); startDyspoAutoRefresh(); }
 
 /* ---------- Init and helpers ---------- */
 function bindInitialUi() {
@@ -1108,7 +1006,6 @@ function bindInitialUi() {
   const sidebarToggle = qs("#sidebar-toggle");
   const sidebarBackdrop = qs("#sidebar-backdrop");
 
-  // Sidebar/hamburger handling (robust)
   if (sidebarToggle && sidebar && sidebarBackdrop) {
     sidebarToggle.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1138,7 +1035,6 @@ function bindInitialUi() {
       document.body.style.overflow = '';
     });
 
-    // Close sidebar when a nav button inside it is clicked
     sidebar.addEventListener('click', (e) => {
       const btn = e.target.closest('.nav-btn, [data-open]');
       if (!btn) return;
@@ -1152,7 +1048,6 @@ function bindInitialUi() {
       }, 120);
     });
 
-    // Close on Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && sidebar.classList.contains('open')) {
         sidebar.classList.remove('open');
@@ -1164,7 +1059,6 @@ function bindInitialUi() {
       }
     });
 
-    // Ensure sidebar state on resize
     window.addEventListener('resize', () => {
       if (window.matchMedia && window.matchMedia('(min-width:901px)').matches) {
         sidebar.classList.remove('open');
@@ -1185,6 +1079,21 @@ function bindInitialUi() {
       window.location.href = 'login.html';
     });
   }
+}
+
+/* safe initial refresh: wait a short time for DOM tables to exist */
+async function safeInitialRefresh() {
+  const required = ['#takeover-table', '#check-table', '#dyspo-table'];
+  const start = Date.now();
+  while (Date.now() - start < 2000) {
+    const allPresent = required.every(sel => !!qs(sel));
+    if (allPresent) {
+      await refreshLists();
+      return;
+    }
+    await new Promise(r => setTimeout(r, 120));
+  }
+  await refreshLists();
 }
 
 async function initApp() {
@@ -1212,7 +1121,7 @@ async function initApp() {
       const toLoad = inProg || reports[0];
       if (toLoad) { const full = await getReportById(toLoad.id); loadReportIntoForm(full, false); }
     }
-    refreshLists();
+    await safeInitialRefresh();
   } catch (e) { console.error('initApp load error', e); }
 
   setTimeout(() => {
@@ -1227,7 +1136,7 @@ function showPanel(name) {
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
-/* Service worker update handling (dodatkowe zabezpieczenie) */
+/* service worker controller change */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     console.log('Service worker controller changed — reload');
@@ -1235,7 +1144,33 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-/* Start */
+/* fallback: ensure hamburger listener if missing */
+document.addEventListener('DOMContentLoaded', () => {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebar-toggle');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!toggle || !sidebar || !backdrop) return;
+  let hasClick = false;
+  try { if (typeof getEventListeners === 'function') { const ev = getEventListeners(toggle).click; if (ev && ev.length) hasClick = true; } } catch(e){}
+  if (!hasClick) {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('visible'); backdrop.classList.add('hidden');
+        toggle.setAttribute('aria-expanded','false');
+        document.documentElement.style.overflow = ''; document.body.style.overflow = '';
+      } else {
+        sidebar.classList.add('open');
+        backdrop.classList.remove('hidden'); backdrop.classList.add('visible');
+        toggle.setAttribute('aria-expanded','true');
+        document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
+      }
+    });
+  }
+});
+
+/* start */
 document.addEventListener('DOMContentLoaded', () => {
   initApp().catch(e => console.error('initApp error', e));
 });
