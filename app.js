@@ -389,29 +389,29 @@ function openModal(title, bodyHtml, onSave) {
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
   modalSaveHandler = onSave;
-  modalBackdrop.classList.remove("hidden");
-  modalBackdrop.setAttribute("aria-hidden","false");
+  modalBackdrop.classList.remove('hidden');
+  modalBackdrop.setAttribute('aria-hidden','false');
   lastFocusedElement = document.activeElement;
   setTimeout(() => {
     const first = modalBody.querySelector('input,textarea,select,button,[tabindex]:not([tabindex="-1"])');
     if (first) { first.scrollIntoView({behavior:'smooth',block:'center'}); first.focus(); }
     else if (modalSaveBtn) modalSaveBtn.focus();
   }, 220);
-  document.addEventListener("keydown", trapTabKey);
-  document.addEventListener("keydown", escCloseModal);
+  document.addEventListener('keydown', trapTabKey);
+  document.addEventListener('keydown', escCloseModal);
 }
 function closeModal() {
   if (!modalBackdrop) return;
-  modalBackdrop.classList.add("hidden");
-  modalBackdrop.setAttribute("aria-hidden","true");
+  modalBackdrop.classList.add('hidden');
+  modalBackdrop.setAttribute('aria-hidden','true');
   modalSaveHandler = null;
   if (lastFocusedElement) lastFocusedElement.focus();
-  document.removeEventListener("keydown", trapTabKey);
-  document.removeEventListener("keydown", escCloseModal);
+  document.removeEventListener('keydown', trapTabKey);
+  document.removeEventListener('keydown', escCloseModal);
 }
-if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeModal);
-if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
-if (modalSaveBtn) modalSaveBtn.addEventListener("click", () => { if (modalSaveHandler) modalSaveHandler(); });
+if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeModal);
+if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
+if (modalSaveBtn) modalSaveBtn.addEventListener('click', () => { if (modalSaveHandler) modalSaveHandler(); });
 if (modalBackdrop) modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
 function escCloseModal(e) { if (e.key === "Escape") closeModal(); }
 function trapTabKey(e) {
@@ -755,16 +755,36 @@ async function takeOverReport(reportId) {
   refreshLists();
 }
 
-/* lists */
+/* ---------- Safe refreshLists (zabezpieczenia przed null DOM) ---------- */
+
 async function refreshLists() {
   const uid = await getCurrentUid();
   if (!uid || !sb) return;
 
+  // helper: bezpiecznie pobiera tbody lub tworzy go jeśli brak
+  function getOrCreateTbody(tableSelector) {
+    const table = qs(tableSelector);
+    if (!table) {
+      console.warn('refreshLists: brak tabeli', tableSelector);
+      return null;
+    }
+    let tbody = table.querySelector('tbody');
+    if (!tbody) {
+      tbody = document.createElement('tbody');
+      table.appendChild(tbody);
+    }
+    return tbody;
+  }
+
   try {
+    // 1) Raporty przekazane do przejęcia (takeover)
     const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
     if (tErr) console.error('refreshLists takeover error', tErr);
-    const takeoverTbody = qs("#takeover-table tbody"); if (takeoverTbody) takeoverTbody.innerHTML = "";
+
+    const takeoverTbody = getOrCreateTbody("#takeover-table");
+    if (takeoverTbody) takeoverTbody.innerHTML = "";
     (takeoverData || []).forEach(r => {
+      if (!takeoverTbody) return;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
@@ -774,11 +794,14 @@ async function refreshLists() {
       takeoverTbody.appendChild(tr);
     });
 
-    // check table — ALL reports
+    // 2) Podgląd raportów — wszystkie raporty
     const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
     if (aErr) console.error('refreshLists allReports error', aErr);
-    const checkTbody = qs("#check-table tbody"); if (checkTbody) checkTbody.innerHTML = "";
+
+    const checkTbody = getOrCreateTbody("#check-table");
+    if (checkTbody) checkTbody.innerHTML = "";
     (allReports || []).forEach(r => {
+      if (!checkTbody) return;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
@@ -789,12 +812,16 @@ async function refreshLists() {
       checkTbody.appendChild(tr);
     });
 
-    // dyspo panel — active reports (not finished)
+    // 3) DyspoPanel — aktywne raporty z obliczeniem opóźnienia
     const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
     if (arErr) console.error('refreshLists activeReports error', arErr);
-    const dyspoTbody = qs("#dyspo-table tbody"); if (dyspoTbody) dyspoTbody.innerHTML = "";
+
+    const dyspoTbody = getOrCreateTbody("#dyspo-table");
+    if (dyspoTbody) dyspoTbody.innerHTML = "";
 
     for (const r of (activeReports || [])) {
+      if (!dyspoTbody) break;
+
       // Pobierz ostatni wpis runs: preferuj ostatni actual, jeśli brak — ostatni planned
       let lr = null;
       try {
