@@ -2,9 +2,9 @@
   "name": "eRegioJet Raporty",
   "short_name": "eRegioJet",
   "description": "Raporty pociągów — obsługa i przekazywanie",
-  "start_url": "/index.html",
+  "start_url": "index.html",
   "display": "standalone",
-  "scope": "/",
+  "scope": "./",
   "orientation": "portrait",
   "background_color": "#f8fafc",
   "theme_color": "#0b74de"
