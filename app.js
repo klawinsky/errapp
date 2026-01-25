@@ -1,20 +1,25 @@
-/* app.js — kompletny plik aplikacji (pełna wersja)
-   Zawiera: Supabase init, autocomplete, CRUD raportów, modal, autosave,
-   safe refreshLists (ensureTableExists), Dyspo auto-refresh, sidebar handling.
+/* app.js — kompletny plik aplikacji
+   Zawiera: bezpieczną inicjalizację auth, obsługę sesji, autocomplete,
+   CRUD raportów (Supabase), modal, autosave, bezpieczne tworzenie paneli/tabel,
+   Dyspo auto-refresh, delegację zdarzeń i odporność na błędy sieciowe.
 */
 
 console.log('app.js loaded');
 
-const sb = (typeof window !== 'undefined' && window.supabase) ? window.supabase : null;
-const qs = (s, r = document) => (r || document).querySelector(s);
-const qsa = (s, r = document) => Array.from((r || document).querySelectorAll(s));
-function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
+const qs = (sel, root = document) => (root || document).querySelector(sel);
+const qsa = (sel, root = document) => Array.from((root || document).querySelectorAll(sel));
+const safeLog = (...args) => { try { console.log(...args); } catch(e){} };
 
+let sb = window.supabase || null; // spodziewamy się, że window.supabase jest ustawione w index.html
 let currentReportId = null;
 let readOnlyMode = false;
 
-/* ---------- Stations autocomplete ---------- */
+/* -------------------- Utilities -------------------- */
+function escapeHtml(s){ if (s === 0) return "0"; if (!s) return ""; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+/* -------------------- Stations autocomplete -------------------- */
 let STATIONS = [];
 async function initStations() {
   try {
@@ -22,7 +27,7 @@ async function initStations() {
     if (!res.ok) throw new Error('stations.json fetch failed');
     STATIONS = await res.json();
     STATIONS.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-    console.log('Stations loaded:', STATIONS.length);
+    safeLog('Stations loaded:', STATIONS.length);
   } catch (e) {
     console.warn('Nie udało się wczytać stations.json', e);
     STATIONS = [];
@@ -90,28 +95,53 @@ function attachStationAutocomplete(inputEl, listEl) {
   return { hideList };
 }
 
-/* ---------- Auth ---------- */
-async function ensureAuthenticatedOrRedirect() {
+/* -------------------- Auth helpers (safe) -------------------- */
+async function safeSignOut() {
+  try { if (sb && sb.auth) await sb.auth.signOut(); } catch(e){ safeLog('safeSignOut error', e); }
+  try { sessionStorage.removeItem('eRJ_user'); } catch(e){}
+}
+async function ensureAuthenticatedOrShowLogin() {
   try {
-    const { data } = await sb.auth.getSession();
-    if (!data?.session) { window.location.href = 'login.html'; return false; }
-    sessionStorage.setItem('eRJ_user', data.session.user.id);
+    if (!sb) { safeLog('Supabase client not initialized'); return false; }
+    const res = await sb.auth.getSession();
+    const session = res?.data?.session || null;
+    if (!session) {
+      safeLog('No active session');
+      return false;
+    }
+    const uid = session.user?.id;
+    if (uid) sessionStorage.setItem('eRJ_user', uid);
     const emailEl = qs('#user-email-display');
-    if (emailEl) emailEl.textContent = data.session.user.email || '';
+    if (emailEl) emailEl.textContent = session.user?.email || '';
     return true;
-  } catch (e) {
-    console.warn('auth check error', e);
-    window.location.href = 'login.html';
+  } catch (err) {
+    safeLog('ensureAuthenticatedOrShowLogin error', err);
+    // przy błędzie refresh tokena: wyloguj i wyczyść lokalne dane
+    try { await safeSignOut(); } catch(e){}
+    const statusEl = qs('#auth-error-status');
+    if (statusEl) statusEl.textContent = 'Błąd autoryzacji. Zaloguj się ponownie.';
     return false;
   }
 }
-async function getCurrentUid() {
-  const s = sessionStorage.getItem('eRJ_user');
-  if (s) return s;
-  try { const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
+
+/* Reaguj na zmiany auth (bez pętli) */
+function initAuthStateListener() {
+  if (!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
+  sb.auth.onAuthStateChange((event, session) => {
+    safeLog('Auth state changed', event);
+    if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      sessionStorage.removeItem('eRJ_user');
+      showPanel('menu');
+    } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (session?.user?.id) sessionStorage.setItem('eRJ_user', session.user.id);
+      const emailEl = qs('#user-email-display');
+      if (emailEl) emailEl.textContent = session?.user?.email || '';
+      safeInitialRefresh().catch(()=>{});
+    }
+  });
 }
 
-/* ---------- DB mapping & CRUD ---------- */
+/* -------------------- DB CRUD (Supabase) -------------------- */
 function mapDbReportToUi(r) {
   if (!r) return null;
   return {
@@ -119,6 +149,11 @@ function mapDbReportToUi(r) {
     general: { trainNumber: r.train_number || '', date: r.date || '', from: r.from_station || '', to: r.to_station || '' },
     consist: r.consist || [], crew: r.crew || [], runs: r.runs || [], dispos: r.dispos || [], remarks: r.remarks || []
   };
+}
+async function getCurrentUid() {
+  const s = sessionStorage.getItem('eRJ_user');
+  if (s) return s;
+  try { const { data } = await sb.auth.getUser(); return data?.user?.id || null; } catch(e){ return null; }
 }
 async function loadReports() {
   const uid = await getCurrentUid();
@@ -208,7 +243,7 @@ async function updateRow(table, id, fields) {
   return data;
 }
 
-/* ---------- Render helpers ---------- */
+/* -------------------- Render helpers -------------------- */
 function updateStatusLabel(report) {
   const label = qs("#report-status-label");
   if (!label) return;
@@ -298,7 +333,7 @@ function renderRuns(report) {
 function renderDispos(report) {
   const list = qs("#dispo-list"); if (!list) return; list.innerHTML = "";
   (report?.dispos || []).forEach(d => {
-    const li = document.createElement("li");
+    const li = document.createElement('li');
     li.innerHTML = `<strong>${escapeHtml(d.source)}:</strong> ${escapeHtml(d.text)}
       <div style="margin-top:8px"><button class="btn small" data-role="edit" data-type="dispo" data-id="${d.id}">Edytuj</button>
       <button class="btn warning small" data-role="delete" data-type="dispo" data-id="${d.id}">Usuń</button></div>`;
@@ -315,7 +350,7 @@ function renderRemarks(report) {
   });
 }
 
-/* ---------- Modal system ---------- */
+/* -------------------- Modal system -------------------- */
 const modalBackdrop = qs("#modal-backdrop");
 const modalTitle = qs("#modal-title");
 const modalBody = qs("#modal-body");
@@ -363,7 +398,130 @@ function trapTabKey(e) {
   else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
 }
 
-/* ---------- UI bindings (buttons, delegation) ---------- */
+/* -------------------- Ensure panels/tables exist -------------------- */
+function ensurePanelAndTable(panelId, tableId, headers, title) {
+  let panel = document.getElementById(panelId);
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = panelId;
+    panel.className = 'panel';
+    panel.hidden = true;
+    panel.innerHTML = `<div class="panel-header"><h2>${escapeHtml(title)}</h2><div class="panel-actions"></div></div><div class="panel-body"></div>`;
+    document.querySelector('main')?.appendChild(panel);
+    safeLog('Created panel', panelId);
+  }
+  let table = document.getElementById(tableId);
+  if (!table) {
+    const card = document.createElement('div'); card.className = 'card';
+    table = document.createElement('table'); table.className = 'table'; table.id = tableId;
+    const thead = document.createElement('thead'); const tr = document.createElement('tr');
+    headers.forEach(h => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+    thead.appendChild(tr); table.appendChild(thead);
+    table.appendChild(document.createElement('tbody'));
+    card.appendChild(table);
+    panel.querySelector('.panel-body').appendChild(card);
+    safeLog('Created table', tableId, 'in', panelId);
+  }
+  return table;
+}
+function ensureAllPanels() {
+  ensurePanelAndTable('panel-takeover','takeover-table',['Numer','Relacja','Dzień','Akcja'],'Przejmij pociąg');
+  ensurePanelAndTable('panel-check','check-table',['Numer','Relacja','Dzień','Status','Podgląd'],'Podgląd raportów');
+  ensurePanelAndTable('panel-dyspo','dyspo-table',['Numer','Relacja','Ostatnia stacja','Odchylenie (min)'],'DyspoPanel');
+}
+
+/* -------------------- getOrCreateTbody & refreshLists -------------------- */
+function getOrCreateTbody(tableSelector) {
+  const table = qs(tableSelector) || null;
+  if (!table) return null;
+  let tbody = table.querySelector('tbody');
+  if (!tbody) {
+    tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+  }
+  return tbody;
+}
+
+async function refreshLists() {
+  const uid = await getCurrentUid();
+  if (!uid || !sb) return;
+  try {
+    // takeover
+    const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
+    if (tErr) console.error('refreshLists takeover error', tErr);
+    const takeoverTbody = getOrCreateTbody('#takeover-table');
+    if (takeoverTbody) takeoverTbody.innerHTML = "";
+    (takeoverData || []).forEach(r => {
+      if (!takeoverTbody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td data-label="Numer">${escapeHtml(r.train_number||'')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Dzień">${escapeHtml(r.date||'')}</td>
+        <td data-label="Akcja"><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
+      takeoverTbody.appendChild(tr);
+    });
+
+    // all reports for check
+    const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
+    if (aErr) console.error('refreshLists allReports error', aErr);
+    const checkTbody = getOrCreateTbody('#check-table');
+    if (checkTbody) checkTbody.innerHTML = "";
+    (allReports || []).forEach(r => {
+      if (!checkTbody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td data-label="Numer">${escapeHtml(r.train_number||'')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Dzień">${escapeHtml(r.date||'')}</td>
+        <td data-label="Status">${escapeHtml(r.status||'')}</td>
+        <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
+      checkTbody.appendChild(tr);
+    });
+
+    // dyspo
+    const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
+    if (arErr) console.error('refreshLists activeReports error', arErr);
+    const dyspoTbody = getOrCreateTbody('#dyspo-table');
+    if (dyspoTbody) dyspoTbody.innerHTML = "";
+
+    for (const r of (activeReports || [])) {
+      if (!dyspoTbody) break;
+      let lr = null;
+      try {
+        const { data: runsActual, error: raErr } = await sb.from('runs').select('*').eq('report_id', r.id).not('actual_arr', 'is', null).order('actual_arr', { ascending: false }).limit(1);
+        if (raErr) console.warn('runsActual error', raErr);
+        if (runsActual && runsActual.length) lr = runsActual[0];
+        else {
+          const { data: runsPlanned, error: rpErr } = await sb.from('runs').select('*').eq('report_id', r.id).order('planned_arr', { ascending: false }).limit(1);
+          if (rpErr) console.warn('runsPlanned error', rpErr);
+          if (runsPlanned && runsPlanned.length) lr = runsPlanned[0];
+        }
+      } catch (e) { console.error('refreshLists lastRun fetch exception', e); }
+
+      let delay = null;
+      if (lr) {
+        const delayArr = calculateDelayMinutes(lr.planned_arr, lr.actual_arr);
+        const delayDep = calculateDelayMinutes(lr.planned_dep, lr.actual_dep);
+        if (delayArr === null && delayDep === null) delay = null;
+        else if (delayArr === null) delay = delayDep;
+        else if (delayDep === null) delay = delayArr;
+        else delay = Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep;
+      }
+
+      const tr = document.createElement('tr');
+      if (delay !== null && Math.abs(delay) > 20) tr.classList.add('row-critical-delay');
+      tr.innerHTML = `<td data-label="Numer">${escapeHtml(r.train_number||'')}</td>
+        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
+        <td data-label="Ostatnia stacja">${escapeHtml(lr ? lr.station : '-')}</td>
+        <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):String(delay))}</td>`;
+      dyspoTbody.appendChild(tr);
+    }
+
+  } catch (e) {
+    console.error('refreshLists outer error', e);
+  }
+}
+
+/* -------------------- UI bindings -------------------- */
 function bindUiActions() {
   const safe = (sel, cb) => { const el = qs(sel); if (el) el.addEventListener('click', cb); };
 
@@ -447,11 +605,7 @@ function bindUiActions() {
       const orders = qs("#modal-run-orders").value.trim();
       if (!station) { alert("Podaj nazwę stacji."); return; }
       const toIso = (v) => v ? new Date(v).toISOString() : null;
-      const plannedArr = toIso(plannedArrRaw);
-      const actualArr = toIso(actualArrRaw);
-      const plannedDep = toIso(plannedDepRaw);
-      const actualDep = toIso(actualDepRaw);
-      await addRun(currentReportId, station, plannedArr, actualArr, plannedDep, actualDep, delayReason, orders);
+      await addRun(currentReportId, station, toIso(plannedArrRaw), toIso(actualArrRaw), toIso(plannedDepRaw), toIso(actualDepRaw), delayReason, orders);
       const report = await getReportById(currentReportId);
       loadReportIntoForm(report, false);
       closeModal(); refreshLists();
@@ -495,7 +649,6 @@ function bindUiActions() {
     });
   });
 
-  // Save / generate / finish / handover / new report
   const saveBtn = qs("#save-report-btn");
   if (saveBtn) saveBtn.addEventListener("click", async () => {
     const r = await readReportFromForm();
@@ -549,7 +702,6 @@ function bindUiActions() {
     refreshLists();
   });
 
-  // Panel manual refresh buttons
   const refreshTakeover = qs('#refresh-takeover');
   if (refreshTakeover) refreshTakeover.addEventListener('click', () => refreshLists());
   const refreshCheck = qs('#refresh-check');
@@ -557,7 +709,7 @@ function bindUiActions() {
   const refreshDyspo = qs('#refresh-dyspo');
   if (refreshDyspo) refreshDyspo.addEventListener('click', () => { triggerDyspoRefresh(true); });
 
-  // Delegated click handler for table buttons (preview, takeover, edit, delete)
+  // Delegated click handler
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -566,21 +718,8 @@ function bindUiActions() {
     const type = btn.getAttribute('data-type');
     const id = btn.getAttribute('data-id');
 
-    if (action === 'takeover') {
-      if (!id) return;
-      await takeOverReport(id);
-      return;
-    }
-    if (action === 'preview') {
-      if (!id) return;
-      const report = await getReportById(id);
-      if (!report) { alert('Nie można pobrać raportu'); return; }
-      loadReportIntoForm(report, true);
-      const nav = qs('.nav-btn[data-panel="handle-train"]');
-      if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); }
-      showPanel("handle-train");
-      return;
-    }
+    if (action === 'takeover') { if (!id) return; await takeOverReport(id); return; }
+    if (action === 'preview') { if (!id) return; const report = await getReportById(id); if (!report) { alert('Nie można pobrać raportu'); return; } loadReportIntoForm(report, true); const nav = qs('.nav-btn[data-panel="handle-train"]'); if (nav) { qsa(".nav-btn").forEach(b => b.classList.remove("active")); nav.classList.add("active"); } showPanel("handle-train"); return; }
 
     if (role === 'delete') {
       if (!id || !type) return;
@@ -597,6 +736,7 @@ function bindUiActions() {
       const table = (type === 'consist' ? 'consist' : type);
       const { data, error } = await sb.from(table).select('*').eq('id', id).single();
       if (error || !data) { alert('Błąd pobierania rekordu'); return; }
+      // only run editing for supported types (run, dispo, remark)
       if (type === 'run') {
         const stationVal = data.station || '';
         const plannedArrVal = data.planned_arr || '';
@@ -678,7 +818,7 @@ function bindUiActions() {
   });
 }
 
-/* handover/takeover */
+/* -------------------- handover / takeover -------------------- */
 async function handoverReport(reportId) {
   if (!reportId || !sb) return;
   const { data, error } = await sb.from('reports').update({ status: 'handed_over' }).eq('id', reportId).select().single();
@@ -686,157 +826,21 @@ async function handoverReport(reportId) {
 }
 async function takeOverReport(reportId) {
   if (!reportId || !sb) return;
-  const { data: userData } = await sb.auth.getUser();
-  const uid = userData?.user?.id;
-  if (!uid) { alert('Musisz być zalogowany, aby przejąć raport'); return; }
-  const { data, error } = await sb.from('reports').update({ created_by: uid, status: 'in_progress' }).eq('id', reportId).select().single();
-  if (error) { console.error('takeover error', error); alert('Błąd przy przejmowaniu raportu: ' + (error.message || JSON.stringify(error))); return; }
-  const report = await getReportById(reportId);
-  loadReportIntoForm(report, false);
-  refreshLists();
-}
-
-/* ---------- Ensure table exists helper (creates table if missing) ---------- */
-function ensureTableExists(tableSelector) {
-  const existing = qs(tableSelector);
-  if (existing) return existing;
-  const map = {
-    '#takeover-table': {
-      panelId: 'panel-takeover',
-      headers: ['Numer', 'Relacja', 'Dzień', 'Akcja']
-    },
-    '#check-table': {
-      panelId: 'panel-check',
-      headers: ['Numer', 'Relacja', 'Dzień', 'Status', 'Podgląd']
-    },
-    '#dyspo-table': {
-      panelId: 'panel-dyspo',
-      headers: ['Numer', 'Relacja', 'Ostatnia stacja', 'Odchylenie (min)']
-    }
-  };
-  const cfg = map[tableSelector];
-  if (!cfg) return null;
-  const panel = qs(`#${cfg.panelId}`);
-  if (!panel) return null;
-  const card = document.createElement('div');
-  card.className = 'card';
-  const table = document.createElement('table');
-  table.className = 'table';
-  table.id = tableSelector.replace('#','');
-  const thead = document.createElement('thead');
-  const trHead = document.createElement('tr');
-  cfg.headers.forEach(h => {
-    const th = document.createElement('th');
-    th.textContent = h;
-    trHead.appendChild(th);
-  });
-  thead.appendChild(trHead);
-  table.appendChild(thead);
-  const tbody = document.createElement('tbody');
-  table.appendChild(tbody);
-  card.appendChild(table);
-  const firstCard = panel.querySelector('.card');
-  if (firstCard) panel.insertBefore(card, firstCard);
-  else panel.appendChild(card);
-  return table;
-}
-function getOrCreateTbody(tableSelector) {
-  let table = qs(tableSelector);
-  if (!table) {
-    table = ensureTableExists(tableSelector);
-    if (!table) return null;
-  }
-  let tbody = table.querySelector('tbody');
-  if (!tbody) {
-    tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-  }
-  return tbody;
-}
-
-/* ---------- Safe refreshLists (zabezpieczenia przed null DOM) ---------- */
-async function refreshLists() {
-  const uid = await getCurrentUid();
-  if (!uid || !sb) return;
   try {
-    const { data: takeoverData, error: tErr } = await sb.from('reports').select('*').eq('status', 'handed_over').order('date', { ascending: false });
-    if (tErr) console.error('refreshLists takeover error', tErr);
-    const takeoverTbody = getOrCreateTbody("#takeover-table");
-    if (takeoverTbody) takeoverTbody.innerHTML = "";
-    (takeoverData || []).forEach(r => {
-      if (!takeoverTbody) return;
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-        <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
-        <td data-label="Akcja"><button class="btn small" data-action="takeover" data-id="${r.id}">Przejmij</button></td>`;
-      takeoverTbody.appendChild(tr);
-    });
-
-    const { data: allReports, error: aErr } = await sb.from('reports').select('*').order('date', { ascending: false });
-    if (aErr) console.error('refreshLists allReports error', aErr);
-    const checkTbody = getOrCreateTbody("#check-table");
-    if (checkTbody) checkTbody.innerHTML = "";
-    (allReports || []).forEach(r => {
-      if (!checkTbody) return;
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-        <td data-label="Dzień">${escapeHtml(r.date || '')}</td>
-        <td data-label="Status">${escapeHtml(r.status || '')}</td>
-        <td data-label="Podgląd"><button class="btn small" data-action="preview" data-id="${r.id}">Podgląd</button></td>`;
-      checkTbody.appendChild(tr);
-    });
-
-    const { data: activeReports, error: arErr } = await sb.from('reports').select('id,train_number,date,from_station,to_station').neq('status','finished').order('date', { ascending: false });
-    if (arErr) console.error('refreshLists activeReports error', arErr);
-    const dyspoTbody = getOrCreateTbody("#dyspo-table");
-    if (dyspoTbody) dyspoTbody.innerHTML = "";
-
-    for (const r of (activeReports || [])) {
-      if (!dyspoTbody) break;
-      let lr = null;
-      try {
-        const { data: runsActual, error: raErr } = await sb.from('runs').select('*').eq('report_id', r.id).not('actual_arr', 'is', null).order('actual_arr', { ascending: false }).limit(1);
-        if (raErr) console.warn('runsActual error', raErr);
-        if (runsActual && runsActual.length) lr = runsActual[0];
-        else {
-          const { data: runsPlanned, error: rpErr } = await sb.from('runs').select('*').eq('report_id', r.id).order('planned_arr', { ascending: false }).limit(1);
-          if (rpErr) console.warn('runsPlanned error', rpErr);
-          if (runsPlanned && runsPlanned.length) lr = runsPlanned[0];
-        }
-      } catch (e) {
-        console.error('refreshLists lastRun fetch exception', e);
-      }
-
-      let delay = null;
-      if (lr) {
-        const delayArr = calculateDelayMinutes(lr.planned_arr, lr.actual_arr);
-        const delayDep = calculateDelayMinutes(lr.planned_dep, lr.actual_dep);
-        if (delayArr === null && delayDep === null) delay = null;
-        else if (delayArr === null) delay = delayDep;
-        else if (delayDep === null) delay = delayArr;
-        else delay = Math.abs(delayArr) >= Math.abs(delayDep) ? delayArr : delayDep;
-      }
-
-      const tr = document.createElement("tr");
-      if (delay !== null && Math.abs(delay) > 20) tr.classList.add("row-critical-delay");
-      tr.innerHTML = `
-        <td data-label="Numer">${escapeHtml(r.train_number || '')}</td>
-        <td data-label="Relacja">${escapeHtml((r.from_station||'') + ' – ' + (r.to_station||''))}</td>
-        <td data-label="Ostatnia stacja">${escapeHtml(lr ? lr.station : '-')}</td>
-        <td data-label="Odchylenie">${delay === null ? '' : (delay>0?('+'+delay):String(delay))}</td>`;
-      dyspoTbody.appendChild(tr);
-    }
-
+    const { data: userData } = await sb.auth.getUser();
+    const uid = userData?.user?.id;
+    if (!uid) { alert('Musisz być zalogowany, aby przejąć raport'); return; }
+    const { data, error } = await sb.from('reports').update({ created_by: uid, status: 'in_progress' }).eq('id', reportId).select().single();
+    if (error) { console.error('takeover error', error); alert('Błąd przy przejmowaniu raportu: ' + (error.message || JSON.stringify(error))); return; }
+    const report = await getReportById(reportId);
+    loadReportIntoForm(report, false);
+    refreshLists();
   } catch (e) {
-    console.error('refreshLists outer error', e);
+    console.error('takeOverReport exception', e);
   }
 }
 
-/* read/load form */
+/* -------------------- Read / load form -------------------- */
 async function readReportFromForm() {
   const train = qs("#general-train-number")?.value.trim() || "";
   const date = qs("#general-date")?.value || null;
@@ -881,7 +885,7 @@ function loadReportIntoForm(report, isReadOnly) {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(id => { const el = qs(id); if (el) el.disabled = disabled; });
 }
 
-/* autosave */
+/* -------------------- Autosave -------------------- */
 let autosaveTimer;
 function bindAutosave() {
   ["#general-train-number","#general-date","#general-from","#general-to"].forEach(sel => {
@@ -902,7 +906,6 @@ function bindAutosave() {
           from_station: r.general.from,
           to_station: r.general.to
         });
-
         try {
           const report = await getReportById(currentReportId);
           if (report) {
@@ -930,7 +933,7 @@ function bindAutosave() {
   });
 }
 
-/* confirm modal */
+/* -------------------- Confirm modal -------------------- */
 const confirmBackdrop = qs("#confirm-backdrop");
 const confirmMessage = qs("#confirm-message");
 const confirmOkBtn = qs("#confirm-ok-btn");
@@ -953,7 +956,7 @@ function closeConfirm() {
 if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", closeConfirm);
 if (confirmOkBtn) confirmOkBtn.addEventListener("click", () => { if (confirmHandler) confirmHandler(); closeConfirm(); });
 
-/* print */
+/* -------------------- Print -------------------- */
 function openPrintWindow(report) {
   const win = window.open("", "_blank", "noopener");
   if (!win) { alert("Przeglądarka zablokowała otwieranie nowego okna. Zezwól na wyskakujące okna i spróbuj ponownie."); return; }
@@ -962,7 +965,7 @@ function openPrintWindow(report) {
   win.document.open(); win.document.write(html); win.document.close();
 }
 
-/* ---------- DyspoPanel auto-refresh ---------- */
+/* -------------------- Dyspo auto-refresh -------------------- */
 let dyspoRefreshIntervalMs = 3 * 60 * 1000;
 let dyspoRefreshTimer = null;
 let isRefreshingDyspo = false;
@@ -1007,10 +1010,8 @@ async function triggerDyspoRefresh(force = false) {
   if (isRefreshingDyspo && !force) return;
   isRefreshingDyspo = true;
   try {
-    if (typeof refreshLists === 'function') {
-      await refreshLists();
-      setDyspoLastUpdated(Date.now());
-    } else console.warn('triggerDyspoRefresh: refreshLists() nieznane');
+    await refreshLists();
+    setDyspoLastUpdated(Date.now());
   } catch (e) { console.error('triggerDyspoRefresh error', e); }
   finally { isRefreshingDyspo = false; }
 }
@@ -1023,7 +1024,7 @@ function stopDyspoAutoRefresh() { if (dyspoRefreshTimer) { clearInterval(dyspoRe
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopDyspoAutoRefresh(); else startDyspoAutoRefresh(); });
 function initDyspoAutoRefreshIntegration() { ensureDyspoUiElements(); startDyspoAutoRefresh(); }
 
-/* ---------- Init and helpers ---------- */
+/* -------------------- UI init & sidebar -------------------- */
 function bindInitialUi() {
   const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
   navBtns.forEach(btn => btn.addEventListener("click", () => {
@@ -1120,8 +1121,9 @@ function bindInitialUi() {
   }
 }
 
-/* safe initial refresh: wait a short time for DOM tables to exist */
+/* -------------------- Safe initial refresh -------------------- */
 async function safeInitialRefresh() {
+  ensureAllPanels();
   const required = ['#takeover-table', '#check-table', '#dyspo-table'];
   const start = Date.now();
   while (Date.now() - start < 2000) {
@@ -1130,26 +1132,37 @@ async function safeInitialRefresh() {
       await refreshLists();
       return;
     }
-    await new Promise(r => setTimeout(r, 120));
+    await sleep(120);
   }
   await refreshLists();
 }
 
+/* -------------------- Init app -------------------- */
 async function initApp() {
-  const ok = await ensureAuthenticatedOrRedirect();
-  if (!ok) return;
+  // ensure panels exist early so UI won't break
+  ensureAllPanels();
 
+  // init auth listener
+  initAuthStateListener();
+
+  // check auth
+  const ok = await ensureAuthenticatedOrShowLogin();
+  if (!ok) {
+    // nie przekierowujemy w pętli — pokazujemy menu/logowanie i kończymy inicjalizację
+    bindInitialUi();
+    bindUiActions();
+    bindAutosave();
+    await initStations();
+    safeLog('No active session — waiting for user to login');
+    return;
+  }
+
+  // normal init
   await initStations();
-  const fromInput = qs('#general-from');
-  const toInput = qs('#general-to');
-  const fromList = qs('#list-general-from');
-  const toList = qs('#list-general-to');
-  if (fromInput && fromList) attachStationAutocomplete(fromInput, fromList);
-  if (toInput && toList) attachStationAutocomplete(toInput, toList);
-
   bindUiActions();
   bindAutosave();
   bindInitialUi();
+  initAuthStateListener();
 
   showPanel('menu');
 
@@ -1168,6 +1181,7 @@ async function initApp() {
   }, 800);
 }
 
+/* -------------------- Panel switching -------------------- */
 function showPanel(name) {
   qsa(".panel").forEach(p => p.hidden = true);
   const el = qs(`#panel-${name}`);
@@ -1175,15 +1189,15 @@ function showPanel(name) {
   if (name === "takeover" || name === "check" || name === "dyspo") refreshLists();
 }
 
-/* service worker controller change */
+/* -------------------- Service worker controller change -------------------- */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    console.log('Service worker controller changed — reload');
+    safeLog('Service worker controller changed — reload');
     window.location.reload();
   });
 }
 
-/* fallback: ensure hamburger listener if missing */
+/* -------------------- Fallback hamburger listener -------------------- */
 document.addEventListener('DOMContentLoaded', () => {
   const sidebar = document.getElementById('sidebar');
   const toggle = document.getElementById('sidebar-toggle');
@@ -1209,7 +1223,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-/* start */
+/* -------------------- Start -------------------- */
 document.addEventListener('DOMContentLoaded', () => {
   initApp().catch(e => console.error('initApp error', e));
 });
