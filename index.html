@@ -3,247 +3,60 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>eRegioJet — Raporty pociągów</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Aplikacja wewnętrzna — Supabase Auth</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; max-width: 900px; }
+    .status { padding: 8px; margin-bottom: 12px; border-radius: 4px; }
+    .status.info { background:#eef; color:#024; }
+    .status.ok { background:#e6ffed; color:#064; }
+    .status.warn { background:#fff4e5; color:#6a3b00; }
+    .status.error { background:#ffe6e6; color:#800; }
+    #main-menu ul { list-style:none; padding:0; display:flex; gap:8px; }
+    #stations .station { padding:8px; border:1px solid #ddd; margin:6px 0; cursor:pointer; border-radius:4px; }
+    #login-container button { margin-right:8px; }
+    .hidden { display:none; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    header h1 { margin:0; font-size:1.2rem; }
+    footer { margin-top:24px; color:#666; font-size:0.9rem; }
+    .danger { color:#800; font-weight:600; }
+  </style>
+
+  <!-- Supabase UMD (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
+  <!-- Konfiguracja aplikacji (wstrzyknij dynamicznie na serwerze jeśli to możliwe) -->
+  <script>
+    window.__APP_CONFIG__ = {
+      SUPABASE_URL: "https://shqumvbmhcbeynrxozal.supabase.co",
+      SUPABASE_ANON_KEY: "sb_publishable_QiF16mMls5_XMwf0DQYKLQ_ecmJTnyI"
+    };
+  </script>
 </head>
 <body>
-  <!-- Topbar -->
-  <header class="topbar">
-    <button id="sidebar-toggle" class="hamburger" aria-label="Menu" aria-expanded="false">☰</button>
-    <div class="brand">eRegioJet</div>
-    <div class="top-actions">
-      <span id="user-email-display" class="user-email"></span>
-      <button id="logout-btn" class="btn small">Wyloguj</button>
-    </div>
+  <header>
+    <h1>Aplikacja wewnętrzna</h1>
+    <div id="user-info"></div>
   </header>
 
-  <!-- Sidebar / Drawer -->
-  <aside id="sidebar" class="sidebar" aria-hidden="true">
-    <nav class="sidebar-nav">
-      <button class="nav-btn" data-panel="menu">Menu</button>
-      <button class="nav-btn" data-panel="handle-train">Nowy raport / Obsługa</button>
-      <button class="nav-btn" data-panel="takeover">Przejmij pociąg</button>
-      <button class="nav-btn" data-panel="check">Sprawdź pociąg</button>
-      <button class="nav-btn" data-panel="dyspo">DyspoPanel</button>
-    </nav>
-  </aside>
-  <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
+  <div id="app-status" class="status info">Inicjalizacja...</div>
 
-  <!-- Main content -->
-  <main class="main">
-    <!-- Panels container -->
-    <section id="panel-menu" class="panel">
-      <div class="panel-header">
-        <h2>Menu</h2>
-        <div class="panel-actions"></div>
-      </div>
-      <div class="panel-body">
-        <div class="card">
-          <h3>Wybierz akcję</h3>
-          <div class="grid">
-            <button class="nav-btn" data-panel="handle-train">Obsłuż pociąg</button>
-            <button class="nav-btn" data-panel="takeover">Przejmij pociąg</button>
-            <button class="nav-btn" data-panel="check">Podgląd raportów</button>
-            <button class="nav-btn" data-panel="dyspo">DyspoPanel</button>
-          </div>
-        </div>
-      </div>
-    </section>
+  <div id="login-container"></div>
 
-    <!-- Handle train (form / editor) -->
-    <section id="panel-handle-train" class="panel" hidden>
-      <div class="panel-header">
-        <h2>Twórz i edytuj raport z jazdy</h2>
-        <div class="panel-actions">
-          <button id="new-report-btn" class="btn small">Nowy raport</button>
-          <button id="save-report-btn" class="btn small">Zapisz</button>
-          <button id="generate-pdf-btn" class="btn small">Drukuj</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="card">
-          <h3>Ogólne</h3>
-          <label>Numer pociągu<input id="general-train-number" type="text" /></label>
-          <label>Data<input id="general-date" type="date" /></label>
-          <label>Stacja od
-            <div class="autocomplete">
-              <input id="general-from" type="text" autocomplete="off" />
-              <div id="list-general-from" class="autocomplete-list hidden" role="listbox"></div>
-            </div>
-          </label>
-          <label>Stacja do
-            <div class="autocomplete">
-              <input id="general-to" type="text" autocomplete="off" />
-              <div id="list-general-to" class="autocomplete-list hidden" role="listbox"></div>
-            </div>
-          </label>
-        </div>
+  <nav id="main-menu"></nav>
 
-        <div class="card">
-          <h3>Skład</h3>
-          <div class="action-row">
-            <button id="add-loco-btn" class="btn small">Dodaj lokomotywę</button>
-            <button id="add-wagon-btn" class="btn small">Dodaj wagon</button>
-          </div>
-          <table id="loco-table" class="table">
-            <thead><tr><th>Oznaczenie</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead>
-            <tbody></tbody>
-          </table>
-          <table id="wagon-table" class="table">
-            <thead><tr><th>Oznaczenie</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+  <section>
+    <h2>Stacje</h2>
+    <div id="stations"></div>
+  </section>
 
-        <div class="card">
-          <h3>Załoga</h3>
-          <button id="add-crew-btn" class="btn small">Dodaj pracownika</button>
-          <table id="crew-table" class="table">
-            <thead><tr><th>Imię i nazwisko</th><th>Funkcja</th><th>Od</th><th>Do</th><th>Akcje</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="card">
-          <h3>Wpisy jazdy</h3>
-          <button id="add-run-btn" class="btn small">Dodaj wpis</button>
-          <table id="run-table" class="table">
-            <thead><tr><th>Stacja</th><th>Plan przyj.</th><th>Rzecz. przyj.</th><th>Odch. przyj.</th><th>Plan odj.</th><th>Rzecz. odj.</th><th>Odch. odj.</th><th>Powód</th><th>Rozkazy</th><th>Akcje</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="card">
-          <h3>Dyspozycje i uwagi</h3>
-          <div class="action-row">
-            <button id="add-dispo-btn" class="btn small">Dodaj dyspozycję</button>
-            <button id="add-remark-btn" class="btn small">Dodaj uwagę</button>
-          </div>
-          <ul id="dispo-list" class="list"></ul>
-          <ul id="remark-list" class="list"></ul>
-        </div>
-
-        <div class="card">
-          <div class="action-row">
-            <button id="handover-btn" class="btn">Przekaż do przejęcia</button>
-            <button id="finish-btn" class="btn warning">Zakończ</button>
-          </div>
-          <div id="report-status-label" class="muted"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Takeover panel -->
-    <section id="panel-takeover" class="panel" hidden>
-      <div class="panel-header">
-        <h2>Przejmij pociąg</h2>
-        <div class="panel-actions">
-          <button id="refresh-takeover" class="btn small">Odśwież</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="card">
-          <table id="takeover-table" class="table">
-            <thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Akcja</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- Check / preview panel -->
-    <section id="panel-check" class="panel" hidden>
-      <div class="panel-header">
-        <h2>Podgląd raportów</h2>
-        <div class="panel-actions">
-          <button id="refresh-check" class="btn small">Odśwież</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="card">
-          <table id="check-table" class="table">
-            <thead><tr><th>Numer</th><th>Relacja</th><th>Dzień</th><th>Status</th><th>Podgląd</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- DyspoPanel -->
-    <section id="panel-dyspo" class="panel" hidden>
-      <div class="panel-header">
-        <h2>DyspoPanel</h2>
-        <div class="panel-actions"></div>
-      </div>
-      <div class="panel-body">
-        <div class="card">
-          <div class="muted" id="dyspo-last-updated"></div>
-          <table id="dyspo-table" class="table">
-            <thead><tr><th>Numer</th><th>Relacja</th><th>Ostatnia stacja</th><th>Odchylenie (min)</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <!-- Modal (global) -->
-  <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <header class="modal-header">
-        <h3 id="modal-title">Tytuł</h3>
-        <button id="modal-close" class="btn small">✕</button>
-      </header>
-      <div id="modal-body" class="modal-body"></div>
-      <footer class="modal-footer">
-        <button id="modal-cancel-btn" class="btn">Anuluj</button>
-        <button id="modal-save-btn" class="btn primary">Zapisz</button>
-      </footer>
-    </div>
+  <div id="access-denied" class="hidden">
+    <p class="danger">Brak dostępu: Twoje konto nie ma uprawnień pracowniczych. Skontaktuj się z administratorem.</p>
   </div>
 
-  <!-- Confirm modal -->
-  <div id="confirm-backdrop" class="modal-backdrop hidden" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true">
-      <div class="modal-body">
-        <p id="confirm-message"></p>
-        <div class="action-row">
-          <button id="confirm-cancel-btn" class="btn">Anuluj</button>
-          <button id="confirm-ok-btn" class="btn primary">OK</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <footer>
+    <small>Wersja produkcyjna — dostęp tylko dla pracowników.</small>
+  </footer>
 
-  <!-- Scripts -->
-  <!-- Supabase client (replace placeholders with your values if needed) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
-  <script>
-    // Jeśli już inicjujesz supabase gdzie indziej, usuń poniższy blok.
-    // Zamień SUPABASE_URL i SUPABASE_ANON_KEY na swoje wartości.
-    if (!window.supabase) {
-      try {
-        const SUPABASE_URL = 'REPLACE_WITH_YOUR_SUPABASE_URL';
-        const SUPABASE_ANON_KEY = 'REPLACE_WITH_YOUR_SUPABASE_ANON_KEY';
-        if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase !== 'undefined') {
-          window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-      } catch (e) {
-        console.warn('Supabase init skipped or failed', e);
-      }
-    }
-  </script>
-
-  <!-- App script -->
-  <script src="app.js" defer></script>
-
-  <!-- Service worker registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-      });
-    }
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
